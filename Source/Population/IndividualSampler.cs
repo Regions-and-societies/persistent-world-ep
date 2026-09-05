@@ -41,7 +41,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             profile = profile ?? RegionProfile.Empty();
             uint rng = PersonSeed(worldSeed, tile, index);
 
-            var p = new Individual { tile = tile, index = index };
+            var p = new Individual { tile = tile, index = index, household = -1 };   // households are stamped by the build (#7)
 
             // 1. sex
             p.female = DemographicsRules.NextFloat(ref rng) < profile.femaleFraction;

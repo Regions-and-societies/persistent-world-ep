@@ -27,11 +27,15 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public int sector = -1;               // -1 any, else OccupationSector ordinal (implies employed)
         public int linked = -1;               // -1 any, 0 derived only, 1 pawn-backed only
         public int tile = int.MinValue;       // one world tile; int.MinValue = any
+        public int household = int.MinValue;  // one household (index within the tile; needs tile); int.MinValue = any
+        public int minHouseholdSize = -1;     // inclusive bounds on the size of the person's household, -1 = none
+        public int maxHouseholdSize = -1;
 
         public bool IsUnfiltered =>
             regionId == int.MinValue && factionKey == int.MinValue && raceKey == int.MinValue && ideoKey == int.MinValue
             && sex < 0 && minAge == int.MinValue && maxAge == int.MaxValue && ageBucket < 0 && education < 0 && minEducation < 0
-            && ses < 0 && minSes < 0 && work < 0 && sector < 0 && linked < 0 && tile == int.MinValue;
+            && ses < 0 && minSes < 0 && work < 0 && sector < 0 && linked < 0 && tile == int.MinValue
+            && household == int.MinValue && minHouseholdSize < 0 && maxHouseholdSize < 0;
 
         public static readonly PopulationFilter All = new PopulationFilter();
 
@@ -52,6 +56,9 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             if (sector >= 0 && (p.work != WorkStatus.Employed || (int)p.sector != sector)) return false;
             if (linked >= 0 && (p.IsLinked ? 1 : 0) != linked) return false;
             if (tile != int.MinValue && p.tile != tile) return false;
+            if (household != int.MinValue && p.household != household) return false;
+            if (minHouseholdSize >= 0 && p.householdSize < minHouseholdSize) return false;
+            if (maxHouseholdSize >= 0 && p.householdSize > maxHouseholdSize) return false;
             return true;
         }
     }
@@ -134,7 +141,8 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                 case Dimension.Sector: return p.work == WorkStatus.Employed ? (int)p.sector : -1;
                 case Dimension.WorkStatus: return (int)p.work;
                 case Dimension.Sex: return p.female ? 1 : 0;
-                default: return p.IsLinked ? 1 : 0;
+                case Dimension.Linked: return p.IsLinked ? 1 : 0;
+                default: return p.household < 0 ? 0 : Math.Min(p.householdSize, HouseholdRules.MaxOccupancy);
             }
         }
 

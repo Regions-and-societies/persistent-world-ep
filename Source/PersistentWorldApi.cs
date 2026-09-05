@@ -82,6 +82,30 @@ namespace RegionsAndSocieties.PersistentWorld
         /// <summary>Indices into <see cref="PopulationDataset.people"/> of the matching people, capped at <paramref name="limit"/> (0 = all).</summary>
         public static List<int> Select(PopulationFilter filter, int limit = 0) => PopulationQuery.Select(Dataset, filter, limit);
 
+        /// <summary>Households on the planet (#7).</summary>
+        public static int TotalHouseholds() => Dataset.HouseholdCount;
+
+        /// <summary>Households on one world tile.</summary>
+        public static int HouseholdsOnTile(int tile) => Dataset.HouseholdsOnTile(tile);
+
+        /// <summary>The household a person belongs to and how many live in it. False if no such slot.</summary>
+        public static bool TryGetHousehold(int tile, int index, out int household, out int size)
+        {
+            household = -1; size = 0;
+            if (!Dataset.TryGet(tile, index, out Individual p)) return false;
+            household = p.household; size = p.householdSize;
+            return household >= 0;
+        }
+
+        /// <summary>The members of household <paramref name="household"/> on a tile, as a run of
+        /// <see cref="PopulationDataset.people"/>: (array start, size).</summary>
+        public static bool TryGetHouseholdMembers(int tile, int household, out int start, out int size)
+            => Dataset.TryHousehold(tile, household, out start, out size);
+
+        /// <summary>The head of a household: its oldest adult, else its oldest member.</summary>
+        public static bool TryGetHouseholdHead(int tile, int household, out Individual head)
+            => Dataset.TryHouseholdHead(tile, household, out head);
+
         /// <summary>The human label of a catalogue key or enum ordinal along a dimension.</summary>
         public static string Label(Dimension dimension, int keyOrOrdinal)
             => SlotLabel(Dataset, dimension, dimension <= Dimension.Ideoligion ? keyOrOrdinal + 1 : keyOrOrdinal);
@@ -108,7 +132,8 @@ namespace RegionsAndSocieties.PersistentWorld
                 case Dimension.Sector: return ((OccupationSector)slot).ToString();
                 case Dimension.WorkStatus: return ((WorkStatus)slot).ToString();
                 case Dimension.Sex: return slot == 1 ? "Female" : "Male";
-                default: return slot == 1 ? "Linked" : "Derived";
+                case Dimension.Linked: return slot == 1 ? "Linked" : "Derived";
+                default: return slot == 0 ? "no household" : "household of " + slot;
             }
         }
 
