@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+    <name>Regions and Societies: Persistent World</name>
+    <author>archdukejim</author>
+    <packageId>RegionsAndSocieties.PersistentWorld</packageId>
+    <url>https://github.com/Regions-and-societies/persistent-world-ep</url>
+    <modVersion>0.1.0</modVersion>
+    <supportedVersions>
+        <li>1.6</li>
+    </supportedVersions>
+    <modDependencies>
+        <!-- No hard dependency on a Regions and Societies core: the two editions
+             (RegionsAndSocieties.Core on Map Mode Framework, RegionsAndSocieties.CoreRP2 on
+             Realistic Planets 2) are mutually exclusive and modDependencies cannot express
+             "either of" — declaring one falsely flags the other edition's users with a
+             missing-dependency warning. The mod entry class warns in-game instead when no
+             edition is loaded. -->
+    </modDependencies>
+    <loadAfter>
+        <li>RegionsAndSocieties.Core</li>
+        <li>RegionsAndSocieties.CoreRP2</li>
+        <li>NozoMe.MapModeFramework</li>
+        <li>koth.RealisticPlanets2</li>
+    </loadAfter>
+    <description>Version: v0.1.0 (Expansion Pack)
+
+An expansion pack for Regions and Societies. Gives the planet a full, queryable population — every person, not just per-region aggregates — built off the game loop on a background thread and swapped in atomically, so it never hitches even at 100k+ people.
+
+Every individual is derived deterministically from the world seed and the region's demographics (age, sex, xenotype, education, occupation, socioeconomic tier), grouped into households sized by the region's residence model, and indexed for counts and breakdowns that other mods, overlays, and a dev-mode debug dump can query. Existing world pawns are linked to their slot in the population. A per-save JSON/CSV sidecar is written as a rebuildable cache for external tools; the save itself stays tiny.
+
+Requires: Regions and Societies (either the standard or the Realistic Planets 2 edition). No settings of its own.
+    </description>
+</ModMetaData>
