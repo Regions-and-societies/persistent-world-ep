@@ -18,12 +18,14 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public readonly long buildMillis;      // wall-clock cost of the build, for the debug dump
         public readonly int linkedCount;       // slots backed by a real world pawn (#4)
         public readonly PopulationIndex index; // region runs + marginals (#5), built with the dataset
+        public readonly HouseholdTable households; // who lives with whom (#7), built with the dataset
 
         private readonly Dictionary<int, int> tileIndex;     // world tile id -> index into snapshot.tiles
         private readonly Dictionary<int, int> regionSlots;   // Core province id -> region slot
 
-        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, int[] tileStart, long buildMillis, int linkedCount = 0, PopulationIndex index = null)
+        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, int[] tileStart, long buildMillis, int linkedCount = 0, PopulationIndex index = null, HouseholdTable households = null)
         {
+            this.households = households ?? (snapshot == null || snapshot.tiles.Length == 0 ? HouseholdTable.Empty : HouseholdTable.Build(snapshot));
             this.snapshot = snapshot ?? PopulationSnapshot.Empty();
             this.people = people ?? Array.Empty<Individual>();
             this.tileStart = tileStart ?? new int[this.snapshot.tiles.Length + 1];
@@ -97,6 +99,44 @@ namespace RegionsAndSocieties.PersistentWorld.Population
 
         /// <summary>Every Core province id in this dataset, in region-slot order.</summary>
         public int[] RegionIds => snapshot.regionIds;
+
+        /// <summary>How many households live on a world tile.</summary>
+        public int HouseholdsOnTile(int tile) => tileIndex.TryGetValue(tile, out int t) ? households.CountOnTile(t) : 0;
+
+        /// <summary>Every household on the planet.</summary>
+        public int HouseholdCount => households.Count;
+
+        /// <summary>Which household (index within the tile) person <paramref name="index"/> of a world tile
+        /// belongs to, or -1.</summary>
+        public int HouseholdOf(int tile, int index)
+            => tileIndex.TryGetValue(tile, out int t) ? households.HouseholdOf(t, index) : -1;
+
+        /// <summary>The members of household <paramref name="h"/> on a world tile as a run of
+        /// <see cref="people"/>: (array start, size). False if there is no such household.</summary>
+        public bool TryHousehold(int tile, int h, out int start, out int size)
+        {
+            start = 0; size = 0;
+            if (!tileIndex.TryGetValue(tile, out int t) || !households.TryMembers(t, h, out int first, out size)) return false;
+            start = tileStart[t] + first;
+            return true;
+        }
+
+        /// <summary>The household head of household <paramref name="h"/> on a tile: its oldest adult, or its
+        /// oldest member when nobody is grown. False if there is no such household.</summary>
+        public bool TryHouseholdHead(int tile, int h, out Individual head)
+        {
+            head = default;
+            if (!TryHousehold(tile, h, out int start, out int size)) return false;
+            int best = -1; bool bestAdult = false;
+            for (int i = start; i < start + size; i++)
+            {
+                ref readonly Individual p = ref people[i];
+                bool adult = p.ageBucket != Demographics.AgeBucket.Child;
+                if (best < 0 || (adult && !bestAdult) || (adult == bestAdult && p.age > people[best].age)) { best = i; bestAdult = adult; }
+            }
+            head = people[best];
+            return true;
+        }
 
         /// <summary>A dataset with nobody in it, so consumers never see null.</summary>
         public static readonly PopulationDataset Empty = new PopulationDataset(PopulationSnapshot.Empty(), null, null, 0);

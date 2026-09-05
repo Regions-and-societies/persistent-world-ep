@@ -46,10 +46,33 @@ namespace RegionsAndSocieties.PersistentWorld.Population
 
             int linkedCount = Overlay(snapshot, tiles, tileStart, people);
             cancel.ThrowIfCancellationRequested();
+            HouseholdTable households = HouseholdTable.Build(snapshot);
+            StampHouseholds(households, tiles, tileStart, people);
+            cancel.ThrowIfCancellationRequested();
             PopulationIndex index = PopulationIndex.Build(snapshot, tileStart, people);
 
             clock.Stop();
-            return new PopulationDataset(snapshot, people, tileStart, clock.ElapsedMilliseconds, linkedCount, index);
+            return new PopulationDataset(snapshot, people, tileStart, clock.ElapsedMilliseconds, linkedCount, index, households);
+        }
+
+        /// <summary>Write each person's household index and size onto the person, so filters and the export
+        /// need no table lookup. O(people).</summary>
+        public static void StampHouseholds(HouseholdTable households, TileSlot[] tiles, int[] tileStart, Individual[] people)
+        {
+            for (int t = 0; t < tiles.Length; t++)
+            {
+                int n = households.CountOnTile(t);
+                for (int h = 0; h < n; h++)
+                {
+                    if (!households.TryMembers(t, h, out int first, out int size)) continue;
+                    for (int k = first; k < first + size; k++)
+                    {
+                        ref Individual p = ref people[tileStart[t] + k];
+                        p.household = h;
+                        p.householdSize = size;
+                    }
+                }
+            }
         }
 
         // The union with the tracked overlay (#4): a slot a real pawn holds reports the pawn's own sex, age,

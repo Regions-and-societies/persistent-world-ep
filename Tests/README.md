@@ -30,6 +30,7 @@ snapshot the tests feed in.
 | `LinkageTests` | world-pawn linkage: one slot per pawn on its home tile, no sharing, stable across reconciles and arrival order, re-homed when a tile or slot vanishes, never evicts; the build overlays the pawn's real attributes on its slot only |
 | `QueryIndexTests` | the query index: every marginal sums to the population, region runs hold exactly their region, every filter's count / breakdown / select agrees with a brute-force scan, fast paths match the slow one, empty and null datasets answer zero |
 | `ExportTests` | the sidecar: JSON round-trips person for person with tiles, regions, labels and links; CSV shape; untrusted input (wrong schema, torn, mismatched) reads as null; safe file names; a restored dataset is adopted only before the first build |
+| `HouseholdTests` | households: sizes sum to the tile, stay 1..7, number Core's residences, are deterministic and vary by tile; hamlets big, cities small; every person in exactly one contiguous run; heads are the oldest adult; index, filters and export see household size |
 
 Not covered, and not pretended to be: anything that needs a live world. Save/load round trips, the
 background rebuild cadence, and whether Core's reflection targets still resolve are in-game checks

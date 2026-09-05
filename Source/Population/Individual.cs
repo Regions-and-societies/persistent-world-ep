@@ -39,6 +39,9 @@ namespace RegionsAndSocieties.PersistentWorld.Population
 
         public int pawnId;               // Verse thingIDNumber of the real pawn backing this slot; 0 = derived
 
+        public int household;            // index of this person's household within the tile (#7); -1 = none
+        public int householdSize;        // people in that household, 1..HouseholdRules.MaxOccupancy
+
         /// <summary>True when a real world pawn holds this slot (#4); its sex, age and keys are the pawn's own.</summary>
         public bool IsLinked => pawnId != 0;
 

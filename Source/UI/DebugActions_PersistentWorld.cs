@@ -60,10 +60,10 @@ namespace RegionsAndSocieties.PersistentWorld.UI
             var sb = new StringBuilder();
             sb.AppendLine("--- R&S PW: population dump (#5) ---");
             if (!PersistentWorldApi.IsAvailable) sb.AppendLine("(not available: no Core edition or no world)");
-            sb.AppendLine($"build #{ds.buildSerial}  people={ds.Count:N0}  tiles={ds.TileCount:N0}  regions={ds.RegionIds.Length}  linked={ds.LinkedCount}  build={ds.buildMillis} ms  seed={ds.snapshot.worldSeed}  densityVersion={ds.snapshot.densityVersion}");
+            sb.AppendLine($"build #{ds.buildSerial}  people={ds.Count:N0}  households={ds.HouseholdCount:N0}  tiles={ds.TileCount:N0}  regions={ds.RegionIds.Length}  linked={ds.LinkedCount}  build={ds.buildMillis} ms  seed={ds.snapshot.worldSeed}  densityVersion={ds.snapshot.densityVersion}");
             if (ds.Count == 0) { sb.AppendLine("(no people — nothing built yet, or the world has no source population)"); return sb.ToString(); }
 
-            foreach (Dimension d in new[] { Dimension.Sex, Dimension.AgeBucket, Dimension.Education, Dimension.Class, Dimension.WorkStatus, Dimension.Sector, Dimension.Xenotype, Dimension.Faction, Dimension.Ideoligion, Dimension.Linked })
+            foreach (Dimension d in new[] { Dimension.Sex, Dimension.AgeBucket, Dimension.Education, Dimension.Class, Dimension.WorkStatus, Dimension.Sector, Dimension.Xenotype, Dimension.Faction, Dimension.Ideoligion, Dimension.HouseholdSize, Dimension.Linked })
                 AppendBreakdown(sb, d, PersistentWorldApi.Breakdown(PopulationFilter.All, d), ds.Count);
 
             sb.AppendLine("  top regions by population:");

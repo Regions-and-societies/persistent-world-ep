@@ -22,12 +22,13 @@ namespace RegionsAndSocieties.PersistentWorld.Population
     public static class PopulationExport
     {
         /// <summary>Bumped when the row layout changes; a reader refuses a file it does not understand.</summary>
-        public const int SchemaVersion = 1;
+        public const int SchemaVersion = 2;
 
         /// <summary>Row column order, for both formats.</summary>
         public static readonly string[] Columns =
         {
             "tile", "index", "female", "age", "ageBucket", "education", "class", "wealth", "work", "sector", "race", "faction", "ideo", "pawn",
+            "household", "householdSize",
         };
 
         // ---------------------------------------------------------------- JSON out
@@ -84,7 +85,8 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             w.Write(p.age); w.Write(sep); w.Write((int)p.ageBucket); w.Write(sep); w.Write((int)p.education); w.Write(sep);
             w.Write((int)p.ses); w.Write(sep); w.Write(p.wealth); w.Write(sep); w.Write((int)p.work); w.Write(sep);
             w.Write((int)p.sector); w.Write(sep); w.Write(p.raceKey); w.Write(sep); w.Write(p.factionKey); w.Write(sep);
-            w.Write(p.ideoKey); w.Write(sep); w.Write(p.pawnId);
+            w.Write(p.ideoKey); w.Write(sep); w.Write(p.pawnId); w.Write(sep);
+            w.Write(p.household); w.Write(sep); w.Write(p.householdSize);
             if (close != '\0') w.Write(close);
         }
 
@@ -138,6 +140,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                         ageBucket = (AgeBucket)ToInt(c[4]), education = (EducationTier)ToInt(c[5]), ses = (SesTier)ToInt(c[6]),
                         wealth = ToInt(c[7]), work = (WorkStatus)ToInt(c[8]), sector = (OccupationSector)ToInt(c[9]),
                         raceKey = ToInt(c[10]), factionKey = ToInt(c[11]), ideoKey = ToInt(c[12]), pawnId = ToInt(c[13]),
+                        household = ToInt(c[14]), householdSize = ToInt(c[15]),
                     };
                     // Rows must sit exactly where the tile table says they do.
                     while (ti < tiles.Length && i >= tileStart[ti + 1]) ti++;
@@ -146,7 +149,14 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                     people[i] = p;
                 }
 
-                return new PopulationDataset(snapshot, people, tileStart, Long(o, "buildMillis"), linked);
+                // Households are a pure function of (seed, tile, population), so the table is rebuilt rather
+                // than read; the rows' household columns must agree with it or the file is not ours.
+                HouseholdTable households = HouseholdTable.Build(snapshot);
+                for (int t = 0; t < tiles.Length; t++)
+                    for (int i = tileStart[t]; i < tileStart[t + 1]; i++)
+                        if (households.HouseholdOf(t, i - tileStart[t]) != people[i].household) return null;
+
+                return new PopulationDataset(snapshot, people, tileStart, Long(o, "buildMillis"), linked, null, households);
             }
             catch (Exception)
             {

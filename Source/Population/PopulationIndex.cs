@@ -17,6 +17,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         WorkStatus = 8,  // dependent / employed / unemployed / retired
         Sex = 9,         // male / female
         Linked = 10,     // derived / pawn-backed
+        HouseholdSize = 11, // 1..HouseholdRules.MaxOccupancy (slot 0 = no household)
     }
 
     /// <summary>
@@ -47,15 +48,16 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public readonly int[] byWork;        // 4
         public readonly int[] bySex;         // male, female
         public readonly int[] byLinked;      // derived, linked
+        public readonly int[] byHouseholdSize; // people (not households) by the size of their household; slot 0 = none
 
         private PopulationIndex(int regionCount, int[] order, int[] regionStart,
             int[] byRegion, int[] byFaction, int[] byXenotype, int[] byIdeo, int[] byAgeBucket, int[] byEducation,
-            int[] byClass, int[] bySector, int[] byWork, int[] bySex, int[] byLinked)
+            int[] byClass, int[] bySector, int[] byWork, int[] bySex, int[] byLinked, int[] byHouseholdSize)
         {
             this.regionCount = regionCount; this.order = order; this.regionStart = regionStart;
             this.byRegion = byRegion; this.byFaction = byFaction; this.byXenotype = byXenotype; this.byIdeo = byIdeo;
             this.byAgeBucket = byAgeBucket; this.byEducation = byEducation; this.byClass = byClass; this.bySector = bySector;
-            this.byWork = byWork; this.bySex = bySex; this.byLinked = byLinked;
+            this.byWork = byWork; this.bySex = bySex; this.byLinked = byLinked; this.byHouseholdSize = byHouseholdSize;
         }
 
         /// <summary>Index a built population. O(people), one pass for the counts and one for the grouping.</summary>
@@ -78,6 +80,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             var byWork = new int[4];
             var bySex = new int[2];
             var byLinked = new int[2];
+            var byHousehold = new int[HouseholdRules.MaxOccupancy + 1];
 
             // Pass 1: marginals; region membership comes from the tile, not the person.
             var regionOfPerson = new int[people.Length];   // region slot, -1 = none
@@ -100,6 +103,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                     if (p.work == WorkStatus.Employed) bySector[Clamp((int)p.sector, bySector.Length)]++;
                     bySex[p.female ? 1 : 0]++;
                     byLinked[p.IsLinked ? 1 : 0]++;
+                    byHousehold[p.household < 0 ? 0 : Clamp(p.householdSize, byHousehold.Length)]++;
                 }
             }
 
@@ -117,7 +121,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                 order[cursor[g]++] = i;
             }
 
-            return new PopulationIndex(regions, order, regionStart, byRegion, byFaction, byXenotype, byIdeo, byAge, byEdu, byClass, bySector, byWork, bySex, byLinked);
+            return new PopulationIndex(regions, order, regionStart, byRegion, byFaction, byXenotype, byIdeo, byAge, byEdu, byClass, bySector, byWork, bySex, byLinked, byHousehold);
         }
 
         /// <summary>The run of <see cref="order"/> holding region slot <paramref name="region"/> (-1 = no region).</summary>
@@ -143,7 +147,8 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                 case Dimension.Sector: return bySector;
                 case Dimension.WorkStatus: return byWork;
                 case Dimension.Sex: return bySex;
-                default: return byLinked;
+                case Dimension.Linked: return byLinked;
+                default: return byHouseholdSize;
             }
         }
 

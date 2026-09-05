@@ -45,7 +45,7 @@ namespace ExportTests
             Section("untrusted input yields null, never throws");
             Check("garbage", PopulationExport.ReadJson(new StringReader("not json")) == null);
             Check("empty text", PopulationExport.ReadJson(new StringReader("")) == null);
-            Check("wrong schema", PopulationExport.ReadJson(new StringReader(json.Replace("\"schema\":1", "\"schema\":99"))) == null);
+            Check("wrong schema", PopulationExport.ReadJson(new StringReader(json.Replace("\"schema\":" + PopulationExport.SchemaVersion, "\"schema\":99"))) == null);
             Check("truncated file", PopulationExport.ReadJson(new StringReader(json.Substring(0, json.Length / 2))) == null);
             Check("row count disagrees with the tile table", PopulationExport.ReadJson(new StringReader(json.Replace("[400,0,50]", "[400,0,49]"))) == null);
             Check("a row in the wrong place", PopulationExport.ReadJson(new StringReader(json.Replace("[12,0,", "[13,0,"))) == null);
