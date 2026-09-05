@@ -1,0 +1,15 @@
+<!--
+    GamePath.props — Set your RimWorld install path here.
+    This file is imported by the .csproj to locate game assemblies.
+-->
+<Project>
+    <PropertyGroup>
+        <RimWorldPath>C:\Program Files (x86)\Steam\steamapps\common\RimWorld</RimWorldPath>
+        <SteamWorkshopPath>C:\Program Files (x86)\Steam\steamapps\workshop\content\294100</SteamWorkshopPath>
+        <!-- Harmony Steam Workshop ID: 2009463077 -->
+        <HarmonyPath>$(SteamWorkshopPath)\2009463077\Current\Assemblies</HarmonyPath>
+        <!-- Regions and Societies core: the sibling checkout's built assembly (same assembly name for
+             both editions, so building against the MMF edition also binds the RP2 edition at runtime). -->
+        <RegionsAndSocietiesPath>$(MSBuildThisFileDirectory)..\..\Core-MMF\Assemblies</RegionsAndSocietiesPath>
+    </PropertyGroup>
+</Project>
