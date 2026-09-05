@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using RegionsAndSocieties.PersistentWorld.Population;
 using RimWorld.Planet;
 using Verse;
@@ -26,7 +27,13 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         private bool rebuildRequested;
         private int lastStartTick = int.MinValue;
 
-        public PersistentWorldComponent(World world) : base(world) { }
+        private Task<PopulationDataset> restore;   // the sidecar read kicked off on load (#6)
+
+        public PersistentWorldComponent(World world) : base(world)
+        {
+            // Every published build refreshes the sidecar; a restored one does not (it came from there).
+            loop.Swapped += ds => { if (ds.buildMillis >= 0 && loop.Swaps > 0) PopulationSidecar.WriteAsync(ds); };
+        }
 
         /// <summary>The component of the current world, or null when no world is loaded.</summary>
         public static PersistentWorldComponent Instance => Find.World?.GetComponent<PersistentWorldComponent>();
@@ -53,6 +60,17 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         {
             base.FinalizeInit(fromLoad);
             rebuildRequested = true;   // first build as soon as the world is live
+            if (PersistentWorldInit.Enabled) BeginRestore();
+        }
+
+        // Read last session's sidecar off the main thread so queries have a planet before the first build
+        // finishes. It is only ever adopted while nothing has been built (MaterializationLoop.Restore).
+        private void BeginRestore()
+        {
+            string path = PopulationSidecar.JsonPath();
+            int seed = Find.World?.info?.Seed ?? 0;
+            if (path == null) return;
+            restore = Task.Run(() => PopulationSidecar.TryRead(path, seed));
         }
 
         public override void WorldComponentTick()
@@ -62,6 +80,14 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
 
             // Publish a finished build first, so a rebuild started this tick never races the swap.
             loop.Poll();
+
+            if (restore != null && restore.IsCompleted)
+            {
+                Task<PopulationDataset> r = restore;
+                restore = null;
+                if (r.Status == TaskStatus.RanToCompletion && r.Result != null && loop.Restore(r.Result))
+                    Log.Message($"[R&S PersistentWorld] Restored {r.Result.Count:N0} people from the sidecar; a fresh build follows.");
+            }
 
             int tick = Find.TickManager?.TicksGame ?? 0;
             bool due = tick - lastStartTick >= CadenceTicks;

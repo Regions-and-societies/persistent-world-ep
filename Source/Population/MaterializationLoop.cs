@@ -71,6 +71,17 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             return false;   // cancelled or failed: keep the previous dataset
         }
 
+        /// <summary>Publish a dataset that did not come from a build — a sidecar restored on load (#6).
+        /// Only honoured while nothing has been built yet, so a restored cache never overwrites live data.
+        /// Returns true when it became current.</summary>
+        public bool Restore(PopulationDataset restored)
+        {
+            if (restored == null || swaps > 0) return false;
+            current = restored;
+            Swapped?.Invoke(current);
+            return true;
+        }
+
         /// <summary>Abandon the in-flight build, if any. The previous dataset stays current.</summary>
         public void Cancel()
         {
