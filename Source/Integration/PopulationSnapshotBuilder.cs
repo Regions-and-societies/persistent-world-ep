@@ -15,8 +15,9 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
     public static class PopulationSnapshotBuilder
     {
         /// <summary>Take a snapshot of the current world, or <see cref="PopulationSnapshot.Empty"/> when
-        /// there is no world or no Core region manager.</summary>
-        public static PopulationSnapshot Take(PopulationCatalogue catalogue)
+        /// there is no world or no Core region manager. <paramref name="links"/> is reconciled against the
+        /// current world pawns first, so the snapshot carries the up-to-date overlay (#4).</summary>
+        public static PopulationSnapshot Take(PopulationCatalogue catalogue, WorldPawnLinks links = null)
         {
             World world = Find.World;
             WorldGrid grid = Find.WorldGrid;
@@ -51,9 +52,11 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
                 }
             }
 
+            LinkedPerson[] linked = links?.Reconcile(WorldPawnLinker.Candidates(catalogue), WorldPawnLinker.PopulationOf);
+
             return PopulationSnapshot.From(seed, rows, regionIds.ToArray(), profiles.ToArray(),
                 catalogue.RaceLabels(), catalogue.FactionLabels(), catalogue.IdeoLabels(),
-                PopulationDensityUtility.CacheVersion);
+                PopulationDensityUtility.CacheVersion, linked);
         }
     }
 }

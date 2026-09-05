@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using RegionsAndSocieties.Demographics;
 
 namespace RegionsAndSocieties.PersistentWorld.Population
 {
@@ -43,8 +44,55 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                     people[start + n] = IndividualSampler.Sample(seed, slot.tile, n, profile);
             }
 
+            int linkedCount = Overlay(snapshot, tiles, tileStart, people);
+
             clock.Stop();
-            return new PopulationDataset(snapshot, people, tileStart, clock.ElapsedMilliseconds);
+            return new PopulationDataset(snapshot, people, tileStart, clock.ElapsedMilliseconds, linkedCount);
+        }
+
+        // The union with the tracked overlay (#4): a slot a real pawn holds reports the pawn's own sex, age,
+        // xenotype, faction and ideoligion. Its derived education, class and wealth stand (0.1.0 has no
+        // pawn-side source for them), but work status is re-derived so it never contradicts the real age.
+        // Links to slots that no longer exist are skipped; the reconcile step drops them next snapshot.
+        private static int Overlay(PopulationSnapshot snapshot, TileSlot[] tiles, int[] tileStart, Individual[] people)
+        {
+            LinkedPerson[] linked = snapshot.linked;
+            if (linked.Length == 0) return 0;
+
+            int applied = 0, ti = 0;
+            for (int k = 0; k < linked.Length; k++)
+            {
+                ref readonly LinkedPerson link = ref linked[k];
+                // Both are sorted by tile, so a single forward scan finds each link's tile.
+                while (ti < tiles.Length && tiles[ti].tile < link.tile) ti++;
+                if (ti >= tiles.Length || tiles[ti].tile != link.tile) continue;
+                if (link.index < 0 || link.index >= tiles[ti].population) continue;
+
+                ref Individual p = ref people[tileStart[ti] + link.index];
+                p.pawnId = link.pawnId;
+                p.female = link.female;
+                p.age = link.age < 0 ? 0 : link.age;
+                p.ageBucket = BucketOf(p.age);
+                p.raceKey = link.raceKey;
+                p.factionKey = link.factionKey;
+                p.ideoKey = link.ideoKey;
+                switch (p.ageBucket)
+                {
+                    case AgeBucket.Child: p.work = WorkStatus.Dependent; break;
+                    case AgeBucket.Elder: p.work = WorkStatus.Retired; break;
+                    default: if (p.work == WorkStatus.Dependent || p.work == WorkStatus.Retired) p.work = WorkStatus.Unemployed; break;
+                }
+                applied++;
+            }
+            return applied;
+        }
+
+        /// <summary>Core's age bands applied to a real age.</summary>
+        public static AgeBucket BucketOf(int age)
+        {
+            if (age < AgeStructureRules.ChildMaxAge) return AgeBucket.Child;
+            if (age >= AgeStructureRules.ElderMinAge) return AgeBucket.Elder;
+            return AgeBucket.WorkingAge;
         }
     }
 }

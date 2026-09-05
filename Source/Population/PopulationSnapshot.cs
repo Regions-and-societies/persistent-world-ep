@@ -26,13 +26,14 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public readonly string[] raceLabels;
         public readonly string[] factionLabels;
         public readonly string[] ideoLabels;
+        public readonly LinkedPerson[] linked;     // slots backed by real world pawns (#4), sorted by (tile, index)
         public readonly int densityVersion;        // Core's population cache version when taken
         public readonly int serial;                // increments per snapshot, so builds can be told apart
 
         private static int nextSerial;
 
         public PopulationSnapshot(int worldSeed, TileSlot[] tiles, int[] regionIds, RegionProfile[] profiles,
-            string[] raceLabels, string[] factionLabels, string[] ideoLabels, int densityVersion)
+            string[] raceLabels, string[] factionLabels, string[] ideoLabels, int densityVersion, LinkedPerson[] linked = null)
         {
             this.worldSeed = worldSeed;
             this.tiles = tiles ?? Array.Empty<TileSlot>();
@@ -41,6 +42,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             this.raceLabels = raceLabels ?? Array.Empty<string>();
             this.factionLabels = factionLabels ?? Array.Empty<string>();
             this.ideoLabels = ideoLabels ?? Array.Empty<string>();
+            this.linked = linked ?? Array.Empty<LinkedPerson>();
             this.densityVersion = densityVersion;
             serial = System.Threading.Interlocked.Increment(ref nextSerial);
         }
@@ -70,12 +72,13 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         /// <summary>A snapshot from a plain list of (tile, region, population) rows and region profiles —
         /// the constructor tests and other pure callers use.</summary>
         public static PopulationSnapshot From(int worldSeed, IList<TileSlot> rows, int[] regionIds, RegionProfile[] profiles,
-            string[] raceLabels = null, string[] factionLabels = null, string[] ideoLabels = null, int densityVersion = 0)
+            string[] raceLabels = null, string[] factionLabels = null, string[] ideoLabels = null, int densityVersion = 0,
+            LinkedPerson[] linked = null)
         {
             var arr = new TileSlot[rows?.Count ?? 0];
             for (int i = 0; i < arr.Length; i++) arr[i] = rows[i];
             Array.Sort(arr, (a, b) => a.tile.CompareTo(b.tile));
-            return new PopulationSnapshot(worldSeed, arr, regionIds, profiles, raceLabels, factionLabels, ideoLabels, densityVersion);
+            return new PopulationSnapshot(worldSeed, arr, regionIds, profiles, raceLabels, factionLabels, ideoLabels, densityVersion, linked);
         }
     }
 }

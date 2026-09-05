@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using RegionsAndSocieties.PersistentWorld.Population;
 using RimWorld.Planet;
 using Verse;
@@ -20,6 +21,8 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
 
         private readonly MaterializationLoop loop = new MaterializationLoop();
         private readonly PopulationCatalogue catalogue = new PopulationCatalogue();
+        private readonly WorldPawnLinks links = new WorldPawnLinks();
+        private List<WorldPawnLinkRecord> linkRecords;   // scribe buffer for <see cref="links"/>
         private bool rebuildRequested;
         private int lastStartTick = int.MinValue;
 
@@ -35,6 +38,9 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         public PopulationCatalogue Catalogue => catalogue;
 
         public MaterializationLoop Loop => loop;
+
+        /// <summary>The scribed world-pawn → slot table (#4). Reconciled on every snapshot.</summary>
+        public WorldPawnLinks Links => links;
 
         /// <summary>Ask for a rebuild at the next tick instead of waiting for the cadence (an event just
         /// changed the population and a consumer wants a fresh dataset). Coalesces: many requests, one build.</summary>
@@ -68,7 +74,7 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         // Kept separate so the R&S-typed snapshot code only JITs when Core is present and a build starts.
         private void StartBuild(int tick)
         {
-            PopulationSnapshot snapshot = PopulationSnapshotBuilder.Take(catalogue);
+            PopulationSnapshot snapshot = PopulationSnapshotBuilder.Take(catalogue, links);
             if (loop.TryStart(snapshot))
             {
                 rebuildRequested = false;
@@ -84,7 +90,7 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
             loop.Cancel();
             loop.Wait();
             loop.Poll();
-            loop.BuildNow(PopulationSnapshotBuilder.Take(catalogue));
+            loop.BuildNow(PopulationSnapshotBuilder.Take(catalogue, links));
             lastStartTick = Find.TickManager?.TicksGame ?? 0;
             rebuildRequested = false;
             return loop.Current;
@@ -93,7 +99,23 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         public override void ExposeData()
         {
             base.ExposeData();
-            // #4 adds the scribed world-pawn linkage overlay here.
+
+            // The tracked overlay (#4) rides inside the .rws: three ints per linked world pawn, nothing else.
+            if (Scribe.mode == LoadSaveMode.Saving)
+            {
+                linkRecords = new List<WorldPawnLinkRecord>();
+                foreach (PawnSlot slot in links.Records()) linkRecords.Add(new WorldPawnLinkRecord(slot));
+            }
+            Scribe_Collections.Look(ref linkRecords, "worldPawnLinks", LookMode.Deep);
+            if (Scribe.mode == LoadSaveMode.PostLoadInit)
+            {
+                var slots = new List<PawnSlot>();
+                if (linkRecords != null)
+                    foreach (WorldPawnLinkRecord r in linkRecords)
+                        if (r != null && r.tile >= 0 && r.index >= 0) slots.Add(r.ToSlot());
+                links.Load(slots);
+                linkRecords = null;
+            }
         }
     }
 }
