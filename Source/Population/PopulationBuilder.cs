@@ -45,9 +45,11 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             }
 
             int linkedCount = Overlay(snapshot, tiles, tileStart, people);
+            cancel.ThrowIfCancellationRequested();
+            PopulationIndex index = PopulationIndex.Build(snapshot, tileStart, people);
 
             clock.Stop();
-            return new PopulationDataset(snapshot, people, tileStart, clock.ElapsedMilliseconds, linkedCount);
+            return new PopulationDataset(snapshot, people, tileStart, clock.ElapsedMilliseconds, linkedCount, index);
         }
 
         // The union with the tracked overlay (#4): a slot a real pawn holds reports the pawn's own sex, age,
