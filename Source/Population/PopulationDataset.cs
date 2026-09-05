@@ -16,15 +16,17 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public readonly int[] tileStart;       // tileStart[i] = offset of snapshot.tiles[i]'s first person; length tiles+1
         public readonly int buildSerial;       // matches snapshot.serial
         public readonly long buildMillis;      // wall-clock cost of the build, for the debug dump
+        public readonly int linkedCount;       // slots backed by a real world pawn (#4)
 
         private readonly Dictionary<int, int> tileIndex;   // world tile id -> index into snapshot.tiles
 
-        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, int[] tileStart, long buildMillis)
+        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, int[] tileStart, long buildMillis, int linkedCount = 0)
         {
             this.snapshot = snapshot ?? PopulationSnapshot.Empty();
             this.people = people ?? Array.Empty<Individual>();
             this.tileStart = tileStart ?? new int[this.snapshot.tiles.Length + 1];
             this.buildMillis = buildMillis;
+            this.linkedCount = linkedCount;
             buildSerial = this.snapshot.serial;
             tileIndex = new Dictionary<int, int>(this.snapshot.tiles.Length);
             for (int i = 0; i < this.snapshot.tiles.Length; i++) tileIndex[this.snapshot.tiles[i].tile] = i;
@@ -32,6 +34,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
 
         public int Count => people.Length;
         public int TileCount => snapshot.tiles.Length;
+        public int LinkedCount => linkedCount;
 
         /// <summary>The range of <see cref="people"/> living on world tile <paramref name="tile"/>; false when
         /// the tile has nobody (or is not in the snapshot).</summary>

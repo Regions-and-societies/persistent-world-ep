@@ -37,6 +37,11 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public int factionKey;           // catalogue key; -1 = unowned
         public int ideoKey;              // catalogue key; -1 = none / Ideology off
 
+        public int pawnId;               // Verse thingIDNumber of the real pawn backing this slot; 0 = derived
+
+        /// <summary>True when a real world pawn holds this slot (#4); its sex, age and keys are the pawn's own.</summary>
+        public bool IsLinked => pawnId != 0;
+
         /// <summary>A stable identity for this slot, unique per world: the tile and index packed together.</summary>
         public long Id => ((long)tile << 32) | (uint)index;
     }
