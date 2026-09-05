@@ -26,6 +26,7 @@ snapshot the tests feed in.
 |---|---|
 | `CorePresenceTests` | the either-edition Core guard the whole EP gates on |
 | `IndividualSamplerTests` | the deterministic individual sampler: same slot, same person; bands; distribution fidelity over 40k draws; sparse-profile defaults; stable draw order |
+| `MaterializationTests` | snapshot → compute → swap: a build is exactly the declared people, tile by tile and person for person; the loop refuses concurrent starts, publishes only completed builds, keeps the previous dataset through a cancel, swaps atomically |
 
 Not covered, and not pretended to be: anything that needs a live world. Save/load round trips, the
 background rebuild cadence, and whether Core's reflection targets still resolve are in-game checks

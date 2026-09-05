@@ -98,6 +98,19 @@ run_suite sampler Exe \
     $CORE_SRC/Demographics/EducationRules.cs $CORE_SRC/Demographics/SocioeconomicRules.cs \
     $CORE_SRC/Demographics/EmploymentRules.cs
 
+# The pure population layer as a whole: the sampler plus the snapshot / dataset / builder / loop (#3).
+POPULATION_PURE="$SRC/Population/RegionProfile.cs $SRC/Population/Individual.cs $SRC/Population/IndividualSampler.cs \
+    $SRC/Population/PopulationSnapshot.cs $SRC/Population/PopulationDataset.cs $SRC/Population/PopulationBuilder.cs \
+    $SRC/Population/MaterializationLoop.cs"
+CORE_RULES="$CORE_SRC/Demographics/DemographicsRules.cs $CORE_SRC/Demographics/AgeStructureRules.cs \
+    $CORE_SRC/Demographics/EducationRules.cs $CORE_SRC/Demographics/SocioeconomicRules.cs \
+    $CORE_SRC/Demographics/EmploymentRules.cs"
+
+# 0.1.0 async materialization (#3): snapshot -> compute -> swap, double-buffered, cancel-safe. Pure.
+run_suite materialization Exe \
+    Tests/MaterializationTests.cs \
+    $POPULATION_PURE $CORE_RULES
+
 # --- suites for #5 index, #7 households register here as they land ---
 
 if [ "$failures" -ne 0 ]; then
