@@ -20,6 +20,12 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 SRC=Source
+# Core's pure rules, reused (not duplicated) by the population layer. Override for a non-sibling checkout.
+CORE_SRC="${CORE_MMF_SRC:-../Core-MMF/Source}"
+if [ ! -f "$CORE_SRC/Demographics/DemographicsRules.cs" ]; then
+    echo "Core-MMF sources not found at $CORE_SRC (set CORE_MMF_SRC); the sampler suite needs them." >&2
+    exit 1
+fi
 OUT="${TMPDIR:-/tmp}/pw-tests"
 mkdir -p "$OUT"
 
@@ -82,7 +88,17 @@ run_suite corepresence Exe \
     Tests/RimWorldStubs.cs Tests/CorePresenceTests.cs \
     $SRC/Integration/CorePresence.cs
 
-# --- suites for #2 sampler, #5 index, #7 households register here as they land ---
+# 0.1.0 sampler (#2): an individual as a pure function of (seed, tile, index, profile). Compiled against
+# Core's own pure Demographics rules (enums, seed mixer, RNG, weighted pick) from the sibling checkout,
+# the same files Core's harness runs alone -- so the EP never duplicates them.
+run_suite sampler Exe \
+    Tests/IndividualSamplerTests.cs \
+    $SRC/Population/RegionProfile.cs $SRC/Population/Individual.cs $SRC/Population/IndividualSampler.cs \
+    $CORE_SRC/Demographics/DemographicsRules.cs $CORE_SRC/Demographics/AgeStructureRules.cs \
+    $CORE_SRC/Demographics/EducationRules.cs $CORE_SRC/Demographics/SocioeconomicRules.cs \
+    $CORE_SRC/Demographics/EmploymentRules.cs
+
+# --- suites for #5 index, #7 households register here as they land ---
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures suite(s) failed"

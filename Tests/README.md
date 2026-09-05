@@ -6,7 +6,9 @@ Suites that run without RimWorld, Unity, Harmony, or a game install. Mirrors `Co
 Tests/run-tests.sh
 ```
 
-Uses mono's `mcs` when present, otherwise the .NET SDK (`dotnet`). Exit code is zero only if every
+Uses mono's `mcs` when present, otherwise the .NET SDK (`dotnet`). The sampler suite compiles Core's
+pure Demographics rules from the sibling `../Core-MMF` checkout (override with `CORE_MMF_SRC`), so the
+EP reuses Core's enums and RNG instead of duplicating them. Exit code is zero only if every
 suite builds and every assertion holds.
 
 ## Why this can exist at all
@@ -23,6 +25,7 @@ snapshot the tests feed in.
 | Suite | Covers |
 |---|---|
 | `CorePresenceTests` | the either-edition Core guard the whole EP gates on |
+| `IndividualSamplerTests` | the deterministic individual sampler: same slot, same person; bands; distribution fidelity over 40k draws; sparse-profile defaults; stable draw order |
 
 Not covered, and not pretended to be: anything that needs a live world. Save/load round trips, the
 background rebuild cadence, and whether Core's reflection targets still resolve are in-game checks
