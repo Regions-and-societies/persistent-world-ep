@@ -17,10 +17,12 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public readonly int buildSerial;       // matches snapshot.serial
         public readonly long buildMillis;      // wall-clock cost of the build, for the debug dump
         public readonly int linkedCount;       // slots backed by a real world pawn (#4)
+        public readonly PopulationIndex index; // region runs + marginals (#5), built with the dataset
 
-        private readonly Dictionary<int, int> tileIndex;   // world tile id -> index into snapshot.tiles
+        private readonly Dictionary<int, int> tileIndex;     // world tile id -> index into snapshot.tiles
+        private readonly Dictionary<int, int> regionSlots;   // Core province id -> region slot
 
-        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, int[] tileStart, long buildMillis, int linkedCount = 0)
+        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, int[] tileStart, long buildMillis, int linkedCount = 0, PopulationIndex index = null)
         {
             this.snapshot = snapshot ?? PopulationSnapshot.Empty();
             this.people = people ?? Array.Empty<Individual>();
@@ -30,6 +32,9 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             buildSerial = this.snapshot.serial;
             tileIndex = new Dictionary<int, int>(this.snapshot.tiles.Length);
             for (int i = 0; i < this.snapshot.tiles.Length; i++) tileIndex[this.snapshot.tiles[i].tile] = i;
+            regionSlots = new Dictionary<int, int>(this.snapshot.regionIds.Length);
+            for (int r = 0; r < this.snapshot.regionIds.Length; r++) regionSlots[this.snapshot.regionIds[r]] = r;
+            this.index = index ?? PopulationIndex.Build(this.snapshot, this.tileStart, this.people);
         }
 
         public int Count => people.Length;
@@ -63,12 +68,35 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         }
 
         /// <summary>The Core province id a person belongs to, or -1.</summary>
-        public int RegionOf(in Individual person)
+        public int RegionOf(in Individual person) => RegionOfTile(person.tile);
+
+        /// <summary>The Core province id of a world tile in this dataset, or -1.</summary>
+        public int RegionOfTile(int tile)
         {
-            if (!tileIndex.TryGetValue(person.tile, out int i)) return -1;
-            int r = snapshot.tiles[i].region;
-            return r < 0 || r >= snapshot.regionIds.Length ? -1 : snapshot.regionIds[r];
+            int r = RegionSlotOfTile(tile);
+            return r < 0 ? -1 : snapshot.regionIds[r];
         }
+
+        /// <summary>The region slot (index into snapshot.regionIds) of a person, or -1.</summary>
+        public int RegionSlotOf(in Individual person) => RegionSlotOfTile(person.tile);
+
+        private int RegionSlotOfTile(int tile)
+        {
+            if (!tileIndex.TryGetValue(tile, out int i)) return -1;
+            int r = snapshot.tiles[i].region;
+            return r < 0 || r >= snapshot.regionIds.Length ? -1 : r;
+        }
+
+        /// <summary>The region slot of a Core province id: -1 for "no region" (id -1), int.MinValue if the id
+        /// is not in this dataset at all.</summary>
+        public int RegionSlotOfId(int regionId)
+        {
+            if (regionId == -1) return -1;
+            return regionSlots.TryGetValue(regionId, out int slot) ? slot : int.MinValue;
+        }
+
+        /// <summary>Every Core province id in this dataset, in region-slot order.</summary>
+        public int[] RegionIds => snapshot.regionIds;
 
         /// <summary>A dataset with nobody in it, so consumers never see null.</summary>
         public static readonly PopulationDataset Empty = new PopulationDataset(PopulationSnapshot.Empty(), null, null, 0);

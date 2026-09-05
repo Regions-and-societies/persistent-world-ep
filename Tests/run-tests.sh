@@ -101,7 +101,8 @@ run_suite sampler Exe \
 # The pure population layer as a whole: the sampler plus the snapshot / dataset / builder / loop (#3).
 POPULATION_PURE="$SRC/Population/RegionProfile.cs $SRC/Population/Individual.cs $SRC/Population/IndividualSampler.cs \
     $SRC/Population/PopulationSnapshot.cs $SRC/Population/PopulationDataset.cs $SRC/Population/PopulationBuilder.cs \
-    $SRC/Population/MaterializationLoop.cs $SRC/Population/WorldPawnLinks.cs"
+    $SRC/Population/MaterializationLoop.cs $SRC/Population/WorldPawnLinks.cs \
+    $SRC/Population/PopulationIndex.cs $SRC/Population/PopulationQuery.cs"
 CORE_RULES="$CORE_SRC/Demographics/DemographicsRules.cs $CORE_SRC/Demographics/AgeStructureRules.cs \
     $CORE_SRC/Demographics/EducationRules.cs $CORE_SRC/Demographics/SocioeconomicRules.cs \
     $CORE_SRC/Demographics/EmploymentRules.cs"
@@ -116,7 +117,12 @@ run_suite linkage Exe \
     Tests/LinkageTests.cs \
     $POPULATION_PURE $CORE_RULES
 
-# --- suites for #5 index, #7 households register here as they land ---
+# 0.1.0 query index (#5): marginals, region runs, and filtered counts/breakdowns against brute force.
+run_suite queryindex Exe \
+    Tests/QueryIndexTests.cs \
+    $POPULATION_PURE $CORE_RULES
+
+# --- suites for #7 households register here as they land ---
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures suite(s) failed"

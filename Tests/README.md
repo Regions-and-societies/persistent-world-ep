@@ -28,6 +28,7 @@ snapshot the tests feed in.
 | `IndividualSamplerTests` | the deterministic individual sampler: same slot, same person; bands; distribution fidelity over 40k draws; sparse-profile defaults; stable draw order |
 | `MaterializationTests` | snapshot → compute → swap: a build is exactly the declared people, tile by tile and person for person; the loop refuses concurrent starts, publishes only completed builds, keeps the previous dataset through a cancel, swaps atomically |
 | `LinkageTests` | world-pawn linkage: one slot per pawn on its home tile, no sharing, stable across reconciles and arrival order, re-homed when a tile or slot vanishes, never evicts; the build overlays the pawn's real attributes on its slot only |
+| `QueryIndexTests` | the query index: every marginal sums to the population, region runs hold exactly their region, every filter's count / breakdown / select agrees with a brute-force scan, fast paths match the slow one, empty and null datasets answer zero |
 
 Not covered, and not pretended to be: anything that needs a live world. Save/load round trips, the
 background rebuild cadence, and whether Core's reflection targets still resolve are in-game checks
