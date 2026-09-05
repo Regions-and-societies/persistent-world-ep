@@ -1,6 +1,6 @@
 # Persistent World — Expansion Pack (design)
 
-**Status:** design only. No code yet.
+**Status:** in development — milestone `0.1.0 Derived Planet` (branch `release/0.1.0`). See *Decisions for 0.1.0* at the end.
 **Series:** Regions and Societies expansion pack (EP), alongside `World-Map-Export-EP`.
 **Depends on:** Regions and Societies Core (either edition — MMF or RP2), for its region
 demographic aggregates. No hard `modDependency` (the two Core editions are mutually exclusive);
@@ -119,7 +119,7 @@ Cost is therefore bounded to what the player actually touches, not planet popula
 
 ---
 
-## Open questions (to settle at build time)
+## Open questions (settled or deferred — see *Decisions for 0.1.0* below)
 
 - Exact promotion triggers and any decay ("un‑track" someone the player never sees again?).
 - Query API shape: a public static surface other mods call, a debug dump, an in‑game panel — or all.
@@ -135,3 +135,34 @@ Cost is therefore bounded to what the player actually touches, not planet popula
   special case of.
 - Same reflection‑guarded, no‑op‑without‑a‑consumer endpoint discipline as `TerritoryClaimHooks` /
   `PopulationDynamics`.
+
+---
+
+## Decisions for 0.1.0 (settled 2026-09-05)
+
+**Scope.** All seven design issues ship in `0.1.0 Derived Planet` (#1 scaffold, #2 sampler, #3 async
+loop, #4 world‑pawn linkage, #5 query index, #6 export sidecar, #7 households). The focus is **raw
+population numbers**: individuals are placeholders — an index slot per tile with sampled demographics,
+no name or personality. Persistent, named individuals are `0.2.0 Persistent Individuals`.
+
+**Promotion rule → 0.2.0 (#8).** Not needed for a derived‑only population. What #4 delivers in 0.1.0 is
+the *linkage*: every existing Verse world pawn with a home tile is bound to one derived index slot on
+that tile, so queries can tell a `Pawn`‑backed row from a derived one, and a linked slot reports the
+real pawn's age/sex/xenotype. Cost is O(world pawns), never O(population).
+
+**Query API shape.** A public static class other mods call (reflection‑friendly, no‑op without a
+consumer) plus a dev‑mode debug action that dumps counts and breakdowns to the log. No in‑game panel
+in 0.1.0.
+
+**Tests.** A dependency‑free `Tests/` harness mirroring Core's (hand‑written RimWorld stubs,
+`run-tests.sh`). The sampler, index, and household assembly are pure C# and get determinism and
+distribution‑fidelity assertions; anything that needs a live world is an in‑game check.
+
+**Individual identity.** Keyed `(tile, index)` as designed; `index` runs `0..populationAtTile`.
+Households (#7) are assembled deterministically per tile from `ResidenceRules` occupancy, keyed
+`(tile, residenceIndex)` with members as a contiguous run of index slots, so a household is stable
+across rebuilds for as long as the tile's population is.
+
+**Game versions.** RimWorld 1.6 only, matching Core (which now uses 1.6‑only APIs).
+
+**World‑Map‑Export as a consumer.** Deferred; not an issue in this milestone.
