@@ -4,47 +4,80 @@ using System.Collections.Generic;
 namespace RegionsAndSocieties.PersistentWorld.Population
 {
     /// <summary>
-    /// A completed materialization: every derived person on the planet, laid out tile by tile in one flat
-    /// array, plus the snapshot it was built from. Immutable once published — queries only ever read the
-    /// last completed dataset, never one under construction. This is the in-memory store the query index
-    /// (#5), households (#7) and the export (#6) all read.
+    /// A completed materialization: every living person on the planet, laid out by the tile they live on,
+    /// indexed by id, plus the snapshot it was built from. Immutable once published — queries only ever
+    /// read the last completed dataset, never one under construction. This is the in-memory store the
+    /// query index (#5), households (#7) and the export (#6) all read.
     /// </summary>
     public sealed class PopulationDataset
     {
         public readonly PopulationSnapshot snapshot;
-        public readonly Individual[] people;   // grouped by tile, in snapshot.tiles order, index ascending within a tile
-        public readonly int[] tileStart;       // tileStart[i] = offset of snapshot.tiles[i]'s first person; length tiles+1
-        public readonly int buildSerial;       // matches snapshot.serial
-        public readonly long buildMillis;      // wall-clock cost of the build, for the debug dump
-        public readonly int linkedCount;       // slots backed by a real world pawn (#4)
-        public readonly PopulationIndex index; // region runs + marginals (#5), built with the dataset
+        public readonly Individual[] people;     // grouped by home tile (tiles order), birth order within a tile
+        public readonly TileSlot[] tiles;        // home tiles: where people live now, with resident counts
+        public readonly int[] tileStart;         // tileStart[t] = offset of tiles[t]'s first resident; length tiles+1
+        public readonly int buildSerial;         // matches snapshot.serial
+        public readonly long buildMillis;        // wall-clock cost of the build, for the debug dump
+        public readonly int linkedCount;         // people who are real world pawns (#4)
+        public readonly PopulationIndex index;   // region runs + marginals (#5), built with the dataset
         public readonly HouseholdTable households; // who lives with whom (#7), built with the dataset
 
-        private readonly Dictionary<int, int> tileIndex;     // world tile id -> index into snapshot.tiles
+        private readonly long[] idKeys;          // sorted ids
+        private readonly int[] idPos;            // position in people of idKeys[i]
+        private readonly Dictionary<int, int> tileIndex;     // home tile id -> index into tiles
         private readonly Dictionary<int, int> regionSlots;   // Core province id -> region slot
 
-        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, int[] tileStart, long buildMillis, int linkedCount = 0, PopulationIndex index = null, HouseholdTable households = null)
+        public PopulationDataset(PopulationSnapshot snapshot, Individual[] people, TileSlot[] tiles, int[] tileStart, long buildMillis,
+            int linkedCount = 0, PopulationIndex index = null, HouseholdTable households = null)
         {
-            this.households = households ?? (snapshot == null || snapshot.tiles.Length == 0 ? HouseholdTable.Empty : HouseholdTable.Build(snapshot));
             this.snapshot = snapshot ?? PopulationSnapshot.Empty();
             this.people = people ?? Array.Empty<Individual>();
-            this.tileStart = tileStart ?? new int[this.snapshot.tiles.Length + 1];
+            this.tiles = tiles ?? Array.Empty<TileSlot>();
+            this.tileStart = tileStart ?? new int[this.tiles.Length + 1];
             this.buildMillis = buildMillis;
             this.linkedCount = linkedCount;
             buildSerial = this.snapshot.serial;
-            tileIndex = new Dictionary<int, int>(this.snapshot.tiles.Length);
-            for (int i = 0; i < this.snapshot.tiles.Length; i++) tileIndex[this.snapshot.tiles[i].tile] = i;
+
+            tileIndex = new Dictionary<int, int>(this.tiles.Length);
+            for (int i = 0; i < this.tiles.Length; i++) tileIndex[this.tiles[i].tile] = i;
             regionSlots = new Dictionary<int, int>(this.snapshot.regionIds.Length);
             for (int r = 0; r < this.snapshot.regionIds.Length; r++) regionSlots[this.snapshot.regionIds[r]] = r;
-            this.index = index ?? PopulationIndex.Build(this.snapshot, this.tileStart, this.people);
+
+            idKeys = new long[this.people.Length];
+            idPos = new int[this.people.Length];
+            for (int i = 0; i < this.people.Length; i++) { idKeys[i] = this.people[i].id; idPos[i] = i; }
+            Array.Sort(idKeys, idPos);
+
+            this.households = households ?? HouseholdTable.Build(this.snapshot.worldSeed, this.tiles);
+            this.index = index ?? PopulationIndex.Build(this.snapshot, this.tiles, this.tileStart, this.people);
         }
 
         public int Count => people.Length;
-        public int TileCount => snapshot.tiles.Length;
+        public int TileCount => tiles.Length;
         public int LinkedCount => linkedCount;
 
+        /// <summary>The position in <see cref="people"/> of the person with <paramref name="id"/>, or -1.</summary>
+        public int PositionOf(long id)
+        {
+            int i = Array.BinarySearch(idKeys, id);
+            return i < 0 ? -1 : idPos[i];
+        }
+
+        /// <summary>The person with <paramref name="id"/>, if they are alive and in this dataset.</summary>
+        public bool TryGetById(long id, out Individual person)
+        {
+            int pos = PositionOf(id);
+            if (pos < 0) { person = default; return false; }
+            person = people[pos];
+            return true;
+        }
+
+        /// <summary>The person born at <paramref name="birthIndex"/> on <paramref name="birthTile"/>, wherever
+        /// they live now. False if no such person is alive in this dataset.</summary>
+        public bool TryGetBorn(int birthTile, int birthIndex, out Individual person)
+            => TryGetById(PersonId.Make(snapshot.worldSeed, birthTile, birthIndex), out person);
+
         /// <summary>The range of <see cref="people"/> living on world tile <paramref name="tile"/>; false when
-        /// the tile has nobody (or is not in the snapshot).</summary>
+        /// nobody lives there.</summary>
         public bool TryTileRange(int tile, out int start, out int count)
         {
             if (tileIndex.TryGetValue(tile, out int i))
@@ -57,35 +90,35 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             return false;
         }
 
-        /// <summary>Person <paramref name="index"/> on <paramref name="tile"/>, or false if no such slot.</summary>
-        public bool TryGet(int tile, int index, out Individual person)
+        /// <summary>Resident <paramref name="n"/> (0-based, in birth order) of a home tile.</summary>
+        public bool TryGetResident(int tile, int n, out Individual person)
         {
-            if (TryTileRange(tile, out int start, out int count) && index >= 0 && index < count)
+            if (TryTileRange(tile, out int start, out int count) && n >= 0 && n < count)
             {
-                person = people[start + index];
+                person = people[start + n];
                 return true;
             }
             person = default;
             return false;
         }
 
-        /// <summary>The Core province id a person belongs to, or -1.</summary>
+        /// <summary>The Core province id a person lives in, or -1.</summary>
         public int RegionOf(in Individual person) => RegionOfTile(person.tile);
 
-        /// <summary>The Core province id of a world tile in this dataset, or -1.</summary>
+        /// <summary>The Core province id of a home tile in this dataset, or -1.</summary>
         public int RegionOfTile(int tile)
         {
             int r = RegionSlotOfTile(tile);
             return r < 0 ? -1 : snapshot.regionIds[r];
         }
 
-        /// <summary>The region slot (index into snapshot.regionIds) of a person, or -1.</summary>
+        /// <summary>The region slot (index into snapshot.regionIds) of a person's home, or -1.</summary>
         public int RegionSlotOf(in Individual person) => RegionSlotOfTile(person.tile);
 
         private int RegionSlotOfTile(int tile)
         {
             if (!tileIndex.TryGetValue(tile, out int i)) return -1;
-            int r = snapshot.tiles[i].region;
+            int r = tiles[i].region;
             return r < 0 || r >= snapshot.regionIds.Length ? -1 : r;
         }
 
@@ -100,18 +133,24 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         /// <summary>Every Core province id in this dataset, in region-slot order.</summary>
         public int[] RegionIds => snapshot.regionIds;
 
+        /// <summary>How many people live somewhere other than where they were born.</summary>
+        public int MovedCount
+        {
+            get { int n = 0; for (int i = 0; i < people.Length; i++) if (people[i].Moved) n++; return n; }
+        }
+
         /// <summary>How many households live on a world tile.</summary>
         public int HouseholdsOnTile(int tile) => tileIndex.TryGetValue(tile, out int t) ? households.CountOnTile(t) : 0;
 
         /// <summary>Every household on the planet.</summary>
         public int HouseholdCount => households.Count;
 
-        /// <summary>Which household (index within the tile) person <paramref name="index"/> of a world tile
+        /// <summary>Which household (index within the tile) resident <paramref name="n"/> of a home tile
         /// belongs to, or -1.</summary>
-        public int HouseholdOf(int tile, int index)
-            => tileIndex.TryGetValue(tile, out int t) ? households.HouseholdOf(t, index) : -1;
+        public int HouseholdOf(int tile, int n)
+            => tileIndex.TryGetValue(tile, out int t) ? households.HouseholdOf(t, n) : -1;
 
-        /// <summary>The members of household <paramref name="h"/> on a world tile as a run of
+        /// <summary>The members of household <paramref name="h"/> on a home tile as a run of
         /// <see cref="people"/>: (array start, size). False if there is no such household.</summary>
         public bool TryHousehold(int tile, int h, out int start, out int size)
         {
@@ -139,6 +178,6 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         }
 
         /// <summary>A dataset with nobody in it, so consumers never see null.</summary>
-        public static readonly PopulationDataset Empty = new PopulationDataset(PopulationSnapshot.Empty(), null, null, 0);
+        public static readonly PopulationDataset Empty = new PopulationDataset(PopulationSnapshot.Empty(), null, null, null, 0);
     }
 }

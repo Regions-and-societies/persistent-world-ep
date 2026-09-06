@@ -16,8 +16,9 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
     {
         /// <summary>Take a snapshot of the current world, or <see cref="PopulationSnapshot.Empty"/> when
         /// there is no world or no Core region manager. <paramref name="links"/> is reconciled against the
-        /// current world pawns first, so the snapshot carries the up-to-date overlay (#4).</summary>
-        public static PopulationSnapshot Take(PopulationCatalogue catalogue, WorldPawnLinks links = null)
+        /// current world pawns first (which may move people through <paramref name="overlay"/>), so the
+        /// snapshot carries the up-to-date link and overlay tables (#4, #9).</summary>
+        public static PopulationSnapshot Take(PopulationCatalogue catalogue, WorldPawnLinks links = null, PopulationOverlay overlay = null)
         {
             World world = Find.World;
             WorldGrid grid = Find.WorldGrid;
@@ -36,7 +37,7 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
             {
                 if (province == null || province.provinceType != ProvinceType.Land || province.tiles == null) continue;
 
-                int slot = -1;   // assigned lazily: regions with nobody living in them take no profile
+                int slot = -1;   // assigned lazily: regions with nobody born in them take no profile
                 for (int i = 0; i < province.tiles.Count; i++)
                 {
                     int tile = province.tiles[i];
@@ -52,11 +53,12 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
                 }
             }
 
-            LinkedPerson[] linked = links?.Reconcile(WorldPawnLinker.Candidates(catalogue), WorldPawnLinker.PopulationOf);
+            LinkedPerson[] linked = links?.Reconcile(seed, WorldPawnLinker.Candidates(catalogue), WorldPawnLinker.BirthsOn, overlay);
+            PersonDelta[] deltas = overlay?.Records();
 
             return PopulationSnapshot.From(seed, rows, regionIds.ToArray(), profiles.ToArray(),
                 catalogue.RaceLabels(), catalogue.FactionLabels(), catalogue.IdeoLabels(),
-                PopulationDensityUtility.CacheVersion, linked);
+                PopulationDensityUtility.CacheVersion, deltas, linked);
         }
     }
 }

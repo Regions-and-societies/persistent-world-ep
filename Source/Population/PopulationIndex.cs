@@ -60,12 +60,14 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             this.byWork = byWork; this.bySex = bySex; this.byLinked = byLinked; this.byHouseholdSize = byHouseholdSize;
         }
 
-        /// <summary>Index a built population. O(people), one pass for the counts and one for the grouping.</summary>
-        public static PopulationIndex Build(PopulationSnapshot snapshot, int[] tileStart, Individual[] people)
+        /// <summary>Index a built population over its home-tile layout. O(people), one pass for the counts
+        /// and one for the grouping.</summary>
+        public static PopulationIndex Build(PopulationSnapshot snapshot, TileSlot[] tiles, int[] tileStart, Individual[] people)
         {
             snapshot = snapshot ?? PopulationSnapshot.Empty();
             people = people ?? Array.Empty<Individual>();
-            TileSlot[] tiles = snapshot.tiles;
+            tiles = tiles ?? Array.Empty<TileSlot>();
+            tileStart = tileStart ?? new int[tiles.Length + 1];
             int regions = snapshot.regionIds.Length;
 
             int factions = 1 + snapshot.factionLabels.Length, races = 1 + snapshot.raceLabels.Length, ideos = 1 + snapshot.ideoLabels.Length;

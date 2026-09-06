@@ -26,7 +26,9 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public int work = -1;                 // -1 any, else WorkStatus ordinal
         public int sector = -1;               // -1 any, else OccupationSector ordinal (implies employed)
         public int linked = -1;               // -1 any, 0 derived only, 1 pawn-backed only
-        public int tile = int.MinValue;       // one world tile; int.MinValue = any
+        public int tile = int.MinValue;       // one home tile (where people live now); int.MinValue = any
+        public int birthTile = int.MinValue;  // one birth tile; int.MinValue = any
+        public int moved = -1;                // -1 any, 0 living where born, 1 living elsewhere
         public int household = int.MinValue;  // one household (index within the tile; needs tile); int.MinValue = any
         public int minHouseholdSize = -1;     // inclusive bounds on the size of the person's household, -1 = none
         public int maxHouseholdSize = -1;
@@ -35,6 +37,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             regionId == int.MinValue && factionKey == int.MinValue && raceKey == int.MinValue && ideoKey == int.MinValue
             && sex < 0 && minAge == int.MinValue && maxAge == int.MaxValue && ageBucket < 0 && education < 0 && minEducation < 0
             && ses < 0 && minSes < 0 && work < 0 && sector < 0 && linked < 0 && tile == int.MinValue
+            && birthTile == int.MinValue && moved < 0
             && household == int.MinValue && minHouseholdSize < 0 && maxHouseholdSize < 0;
 
         public static readonly PopulationFilter All = new PopulationFilter();
@@ -56,6 +59,8 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             if (sector >= 0 && (p.work != WorkStatus.Employed || (int)p.sector != sector)) return false;
             if (linked >= 0 && (p.IsLinked ? 1 : 0) != linked) return false;
             if (tile != int.MinValue && p.tile != tile) return false;
+            if (birthTile != int.MinValue && p.birthTile != birthTile) return false;
+            if (moved >= 0 && (p.Moved ? 1 : 0) != moved) return false;
             if (household != int.MinValue && p.household != household) return false;
             if (minHouseholdSize >= 0 && p.householdSize < minHouseholdSize) return false;
             if (maxHouseholdSize >= 0 && p.householdSize > maxHouseholdSize) return false;
@@ -113,11 +118,10 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             var into = new List<int>();
             if (ds == null) return into;
             filter = filter ?? PopulationFilter.All;
-            int last = -1;
             Scan(ds, filter, (in Individual p) =>
             {
                 if (limit > 0 && into.Count >= limit) return;
-                into.Add(IndexOf(ds, in p, ref last));
+                into.Add(ds.PositionOf(p.id));
             });
             return into;
         }
@@ -177,12 +181,6 @@ namespace RegionsAndSocieties.PersistentWorld.Population
 
             for (int i = 0; i < people.Length; i++)
                 if (filter.Matches(in people[i])) visit(in people[i]);
-        }
-
-        // people are grouped by tile with index ascending, so (tile, index) → array position is a lookup.
-        private static int IndexOf(PopulationDataset ds, in Individual p, ref int last)
-        {
-            return ds.TryTileRange(p.tile, out int start, out _) ? start + p.index : -1;
         }
     }
 }

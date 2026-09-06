@@ -12,15 +12,19 @@ namespace RegionsAndSocieties.PersistentWorld.Population
     }
 
     /// <summary>
-    /// One derived person: a plain value, computed on demand from <c>(world seed, tile, index)</c> and the
-    /// region's <see cref="RegionProfile"/>, stored nowhere. Person <c>index</c> of <c>tile</c> is the same
-    /// on every machine and every load. In 0.1.0 individuals are placeholders — a slot with sampled
-    /// demographics, no name, no personality — which is exactly what population counts need.
+    /// One person: a plain value. Identity (<see cref="id"/>, birth tile, birth index) is fixed at birth
+    /// and derived from the world seed; everything else is the person's birth state unless the overlay
+    /// (#9) has changed it — <see cref="tile"/> is where they live <i>now</i>. Computed on demand, stored
+    /// nowhere except as a sparse delta when it differs from birth. In 0.1.0 people are placeholders —
+    /// sampled demographics, no name, no personality — which is exactly what population counts need.
     /// </summary>
     public struct Individual
     {
-        public int tile;
-        public int index;
+        public long id;                  // PersonId.Make(seed, birthTile, birthIndex); never changes
+        public int birthTile;
+        public int birthIndex;
+
+        public int tile;                 // home: where this person lives now
 
         public bool female;
         public int age;                  // years
@@ -37,15 +41,15 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public int factionKey;           // catalogue key; -1 = unowned
         public int ideoKey;              // catalogue key; -1 = none / Ideology off
 
-        public int pawnId;               // Verse thingIDNumber of the real pawn backing this slot; 0 = derived
+        public int pawnId;               // Verse thingIDNumber of the real pawn backing this person; 0 = derived
 
-        public int household;            // index of this person's household within the tile (#7); -1 = none
+        public int household;            // index of this person's household within their home tile (#7); -1 = none
         public int householdSize;        // people in that household, 1..HouseholdRules.MaxOccupancy
 
-        /// <summary>True when a real world pawn holds this slot (#4); its sex, age and keys are the pawn's own.</summary>
+        /// <summary>True when a real world pawn is this person (#4); sex, age and keys are the pawn's own.</summary>
         public bool IsLinked => pawnId != 0;
 
-        /// <summary>A stable identity for this slot, unique per world: the tile and index packed together.</summary>
-        public long Id => ((long)tile << 32) | (uint)index;
+        /// <summary>True when this person lives somewhere other than where they were born.</summary>
+        public bool Moved => tile != birthTile;
     }
 }

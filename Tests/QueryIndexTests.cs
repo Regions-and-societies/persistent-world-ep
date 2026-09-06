@@ -112,8 +112,8 @@ namespace QueryIndexTests
             };
             var linked = new[]
             {
-                new LinkedPerson { pawnId = 900, tile = 400, index = 3, female = true, age = 44, raceKey = 1, factionKey = 0, ideoKey = 0 },
-                new LinkedPerson { pawnId = 901, tile = 800, index = 0, female = false, age = 30, raceKey = -1, factionKey = 1, ideoKey = -1 },
+                new LinkedPerson { id = PersonId.Make(Seed, 400, 3), birthTile = 400, birthIndex = 3, pawnId = 900, female = true, age = 44, raceKey = 1, factionKey = 0, ideoKey = 0 },
+                new LinkedPerson { id = PersonId.Make(Seed, 800, 0), birthTile = 800, birthIndex = 0, pawnId = 901, female = false, age = 30, raceKey = -1, factionKey = 1, ideoKey = -1 },
             };
             var snap = PopulationSnapshot.From(Seed, rows, new[] { 77, 78 }, profiles, new[] { "Baseliner", "Hussar" }, new[] { "Empire", "Tribe" }, new[] { "Creed" }, linked: linked);
             return PopulationBuilder.Build(snap);

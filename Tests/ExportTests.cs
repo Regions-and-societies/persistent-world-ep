@@ -27,7 +27,7 @@ namespace ExportTests
             Check("same labels", back.snapshot.raceLabels[1] == "Hussar" && back.snapshot.factionLabels[0] == "Empire \"the\" Great" && back.snapshot.ideoLabels[0] == "Creed\nof\tTabs");
             Check("same seed and density version", back.snapshot.worldSeed == Seed && back.snapshot.densityVersion == 9);
             Check("every person identical", SamePeople(ds, back));
-            Check("region of a person survives", back.TryGet(800, 2, out Individual q) && back.RegionOf(in q) == 78 && back.TryGet(4000, 0, out Individual n) && back.RegionOf(in n) == -1);
+            Check("region of a person survives", back.TryGetBorn(800, 2, out Individual q) && back.RegionOf(in q) == 78 && back.TryGetBorn(4000, 0, out Individual n) && back.RegionOf(in n) == -1);
             Check("index is rebuilt on read", back.index.byLinked[1] == 2 && Sum(back.index.byRegion) == back.Count && PopulationQuery.Count(back, new PopulationFilter { regionId = 77 }) == PopulationQuery.Count(ds, new PopulationFilter { regionId = 77 }));
             Check("re-export of the restored dataset is byte-identical", Json(back).Replace("\"buildSerial\":" + back.buildSerial, "") == json.Replace("\"buildSerial\":" + ds.buildSerial, ""));
             Check("empty dataset round-trips", PopulationExport.ReadJson(new StringReader(Json(PopulationDataset.Empty)))?.Count == 0);
@@ -36,11 +36,11 @@ namespace ExportTests
             var sw = new StringWriter();
             PopulationExport.WriteCsv(ds, sw);
             string[] lines = sw.ToString().Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            Check("header plus one row per person", lines.Length == ds.Count + 1 && lines[0].StartsWith("tile,index,female,age") && lines[0].EndsWith(",region"));
+            Check("header plus one row per person", lines.Length == ds.Count + 1 && lines[0].StartsWith("id,birthTile,birthIndex,home,female,age") && lines[0].EndsWith(",region"));
             string[] first = lines[1].Split(',');
-            Check("row is in column order with the region appended", first.Length == PopulationExport.Columns.Length + 1 && first[0] == ds.people[0].tile.ToString() && first[1] == "0" && first[first.Length - 1] == ds.RegionOf(in ds.people[0]).ToString());
-            ds.TryGet(400, 3, out Individual linked);
-            Check("a linked row carries its pawn id", lines[1 + IndexOf(ds, 400, 3)].Split(',')[13] == "900" && linked.pawnId == 900);
+            Check("row is in column order with the region appended", first.Length == PopulationExport.Columns.Length + 1 && first[0] == PersonId.ToHex(ds.people[0].id) && first[1] == ds.people[0].birthTile.ToString() && first[2] == "0" && first[3] == ds.people[0].tile.ToString() && first[first.Length - 1] == ds.RegionOf(in ds.people[0]).ToString());
+            ds.TryGetBorn(400, 3, out Individual linked);
+            Check("a linked row carries its pawn id", lines[1 + ds.PositionOf(linked.id)].Split(',')[15] == "900" && linked.pawnId == 900);
 
             Section("untrusted input yields null, never throws");
             Check("garbage", PopulationExport.ReadJson(new StringReader("not json")) == null);
@@ -48,7 +48,8 @@ namespace ExportTests
             Check("wrong schema", PopulationExport.ReadJson(new StringReader(json.Replace("\"schema\":" + PopulationExport.SchemaVersion, "\"schema\":99"))) == null);
             Check("truncated file", PopulationExport.ReadJson(new StringReader(json.Substring(0, json.Length / 2))) == null);
             Check("row count disagrees with the tile table", PopulationExport.ReadJson(new StringReader(json.Replace("[400,0,50]", "[400,0,49]"))) == null);
-            Check("a row in the wrong place", PopulationExport.ReadJson(new StringReader(json.Replace("[12,0,", "[13,0,"))) == null);
+            string born12 = "[\"" + PersonId.ToHex(PersonId.Make(Seed, 12, 0)) + "\",12,0,12,";
+            Check("a row in the wrong place", json.Contains(born12) && PopulationExport.ReadJson(new StringReader(json.Replace(born12, born12.Replace(",12,0,12,", ",12,0,13,")))) == null);
             Check("not an object", PopulationExport.ReadJson(new StringReader("[1,2,3]")) == null);
 
             Section("MiniJson");
@@ -92,8 +93,8 @@ namespace ExportTests
             };
             var linked = new[]
             {
-                new LinkedPerson { pawnId = 900, tile = 400, index = 3, female = true, age = 44, raceKey = 1, factionKey = 0, ideoKey = 0 },
-                new LinkedPerson { pawnId = 901, tile = 800, index = 0, female = false, age = 30, raceKey = -1, factionKey = 1, ideoKey = -1 },
+                new LinkedPerson { id = PersonId.Make(Seed, 400, 3), birthTile = 400, birthIndex = 3, pawnId = 900, female = true, age = 44, raceKey = 1, factionKey = 0, ideoKey = 0 },
+                new LinkedPerson { id = PersonId.Make(Seed, 800, 0), birthTile = 800, birthIndex = 0, pawnId = 901, female = false, age = 30, raceKey = -1, factionKey = 1, ideoKey = -1 },
             };
             var snap = PopulationSnapshot.From(Seed, rows, new[] { 77, 78 }, profiles, new[] { "Baseliner", "Hussar" }, new[] { "Empire \"the\" Great", "Tribe" }, new[] { "Creed\nof\tTabs" }, densityVersion: 9, linked: linked);
             return PopulationBuilder.Build(snap);
@@ -109,7 +110,7 @@ namespace ExportTests
             for (int i = 0; i < a.Count; i++)
             {
                 Individual x = a.people[i], y = b.people[i];
-                if (x.tile != y.tile || x.index != y.index || x.female != y.female || x.age != y.age || x.ageBucket != y.ageBucket || x.education != y.education
+                if (x.id != y.id || x.tile != y.tile || x.birthIndex != y.birthIndex || x.female != y.female || x.age != y.age || x.ageBucket != y.ageBucket || x.education != y.education
                     || x.ses != y.ses || x.wealth != y.wealth || x.work != y.work || x.sector != y.sector || x.raceKey != y.raceKey || x.factionKey != y.factionKey
                     || x.ideoKey != y.ideoKey || x.pawnId != y.pawnId) return false;
             }

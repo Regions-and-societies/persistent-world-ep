@@ -20,38 +20,40 @@ namespace MaterializationTests
             PopulationSnapshot snap = Planet(out RegionProfile[] profiles);
             PopulationDataset ds = PopulationBuilder.Build(snap);
             Check("count is the snapshot total", ds.Count == snap.TotalPopulation && ds.Count == 12 + 250 + 3 + 40);
-            Check("tiles are in ascending order", snap.tiles[0].tile < snap.tiles[1].tile && snap.tiles[1].tile < snap.tiles[2].tile);
+            Check("birth tiles are in ascending order", snap.tiles[0].tile < snap.tiles[1].tile && snap.tiles[1].tile < snap.tiles[2].tile);
+            Check("home tiles are the populated birth tiles, ascending", ds.TileCount == 4 && ds.tiles[0].tile == 12 && ds.tiles[3].tile == 4000);
             Check("tileStart offsets are cumulative", ds.tileStart[0] == 0 && ds.tileStart[ds.TileCount] == ds.Count && Monotonic(ds.tileStart));
             Check("a zero-population tile takes no room", ds.TryTileRange(9000, out _, out int zc) == false && zc == 0);
-            Check("tile range lookup", ds.TryTileRange(400, out int s400, out int c400) && c400 == 250 && ds.people[s400].tile == 400 && ds.people[s400 + 249].index == 249);
+            Check("tile range lookup", ds.TryTileRange(400, out int s400, out int c400) && c400 == 250 && ds.people[s400].tile == 400 && ds.people[s400 + 249].birthIndex == 249);
             Check("unknown tile has no range", !ds.TryTileRange(1, out _, out _));
-            Check("TryGet by (tile, index)", ds.TryGet(400, 17, out Individual p17) && p17.tile == 400 && p17.index == 17);
-            Check("TryGet out of range is false", !ds.TryGet(400, 250, out _) && !ds.TryGet(400, -1, out _));
-            Check("region of a person is the Core province id", ds.RegionOf(in p17) == 77 && ds.TryGet(4000, 0, out Individual q) && ds.RegionOf(in q) == -1);
+            Check("TryGetBorn", ds.TryGetBorn(400, 17, out Individual p17) && p17.tile == 400 && p17.birthIndex == 17 && p17.id == PersonId.Make(Seed, 400, 17));
+            Check("TryGetBorn out of range is false", !ds.TryGetBorn(400, 250, out _) && !ds.TryGetBorn(400, -1, out _));
+            Check("TryGetById and PositionOf agree", ds.TryGetById(p17.id, out Individual q17) && q17.birthIndex == 17 && ds.people[ds.PositionOf(p17.id)].id == p17.id && ds.PositionOf(123) == -1);
+            Check("region of a person is the Core province id", ds.RegionOf(in p17) == 77 && ds.TryGetResident(4000, 0, out Individual q) && ds.RegionOf(in q) == -1);
             Check("build serial matches the snapshot", ds.buildSerial == snap.serial);
 
             Section("the build is the sampler, person for person");
             bool same = true;
             for (int i = 0; i < ds.TileCount; i++)
             {
-                TileSlot slot = snap.tiles[i];
-                RegionProfile prof = snap.ProfileFor(in slot);
+                TileSlot slot = ds.tiles[i];
+                RegionProfile prof = snap.ProfileFor(snap.RegionSlotOfTile(slot.tile));
                 for (int n = 0; n < slot.population; n++)
                 {
                     Individual a = ds.people[ds.tileStart[i] + n];
                     Individual b = IndividualSampler.Sample(Seed, slot.tile, n, prof);
-                    same &= a.tile == b.tile && a.index == b.index && a.age == b.age && a.wealth == b.wealth && a.female == b.female && a.raceKey == b.raceKey;
+                    same &= a.id == b.id && a.tile == b.tile && a.birthIndex == b.birthIndex && a.age == b.age && a.wealth == b.wealth && a.female == b.female && a.raceKey == b.raceKey;
                 }
             }
-            Check("every person equals a direct sample of its slot", same);
-            Check("a tile outside any region uses the empty profile", ds.TryGet(4000, 1, out Individual w) && w.raceKey == -1 && w.factionKey == -1);
+            Check("every person equals a direct sample of its birth slot", same);
+            Check("a tile outside any region uses the empty profile", ds.TryGetBorn(4000, 1, out Individual w) && w.raceKey == -1 && w.factionKey == -1);
             Check("two builds of the same snapshot are identical", SamePeople(ds, PopulationBuilder.Build(snap)));
             Check("a different seed is a different planet", !SamePeople(ds, PopulationBuilder.Build(Planet(out _, Seed + 1))));
 
             Section("edge cases");
             Check("empty snapshot builds an empty dataset", PopulationBuilder.Build(PopulationSnapshot.Empty()).Count == 0);
             Check("null snapshot builds an empty dataset", PopulationBuilder.Build(null).Count == 0);
-            Check("the Empty dataset is usable", PopulationDataset.Empty.Count == 0 && !PopulationDataset.Empty.TryTileRange(0, out _, out _));
+            Check("the Empty dataset is usable", PopulationDataset.Empty.Count == 0 && !PopulationDataset.Empty.TryTileRange(0, out _, out _) && !PopulationDataset.Empty.TryGetById(1, out _));
             var cts = new CancellationTokenSource(); cts.Cancel();
             bool cancelled = false;
             try { PopulationBuilder.Build(Planet(out _), cts.Token); } catch (OperationCanceledException) { cancelled = true; }
@@ -128,7 +130,7 @@ namespace MaterializationTests
             for (int i = 0; i < a.Count; i++)
             {
                 Individual x = a.people[i], y = b.people[i];
-                if (x.tile != y.tile || x.index != y.index || x.age != y.age || x.wealth != y.wealth || x.female != y.female) return false;
+                if (x.id != y.id || x.tile != y.tile || x.birthIndex != y.birthIndex || x.age != y.age || x.wealth != y.wealth || x.female != y.female) return false;
             }
             return true;
         }

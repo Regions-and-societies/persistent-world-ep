@@ -93,7 +93,7 @@ run_suite corepresence Exe \
 # the same files Core's harness runs alone -- so the EP never duplicates them.
 run_suite sampler Exe \
     Tests/IndividualSamplerTests.cs \
-    $SRC/Population/RegionProfile.cs $SRC/Population/Individual.cs $SRC/Population/IndividualSampler.cs \
+    $SRC/Population/RegionProfile.cs $SRC/Population/Individual.cs $SRC/Population/IndividualSampler.cs $SRC/Population/PersonId.cs \
     $CORE_SRC/Demographics/DemographicsRules.cs $CORE_SRC/Demographics/AgeStructureRules.cs \
     $CORE_SRC/Demographics/EducationRules.cs $CORE_SRC/Demographics/SocioeconomicRules.cs \
     $CORE_SRC/Demographics/EmploymentRules.cs
@@ -103,7 +103,7 @@ POPULATION_PURE="$SRC/Population/RegionProfile.cs $SRC/Population/Individual.cs 
     $SRC/Population/PopulationSnapshot.cs $SRC/Population/PopulationDataset.cs $SRC/Population/PopulationBuilder.cs \
     $SRC/Population/MaterializationLoop.cs $SRC/Population/WorldPawnLinks.cs \
     $SRC/Population/PopulationIndex.cs $SRC/Population/PopulationQuery.cs $SRC/Population/PopulationExport.cs \
-    $SRC/Population/Households.cs"
+    $SRC/Population/Households.cs $SRC/Population/PersonId.cs $SRC/Population/PopulationOverlay.cs"
 CORE_RULES="$CORE_SRC/Demographics/DemographicsRules.cs $CORE_SRC/Demographics/AgeStructureRules.cs \
     $CORE_SRC/Demographics/EducationRules.cs $CORE_SRC/Demographics/SocioeconomicRules.cs \
     $CORE_SRC/Demographics/EmploymentRules.cs $CORE_SRC/Demographics/ResidenceRules.cs"
@@ -131,6 +131,12 @@ run_suite export Exe \
 # 0.1.0 households (#7): Core's residence count split into 1..7-person contiguous runs, deterministically.
 run_suite households Exe \
     Tests/HouseholdTests.cs \
+    $POPULATION_PURE $CORE_RULES
+
+# 0.1.0 pawn-bound identity (#9): stable opaque ids, the sparse overlay (state not history, packed exactly),
+# moves and deaths honoured by the build, links that move their people, ids through the export.
+run_suite identity Exe \
+    Tests/IdentityTests.cs \
     $POPULATION_PURE $CORE_RULES
 
 if [ "$failures" -ne 0 ]; then
