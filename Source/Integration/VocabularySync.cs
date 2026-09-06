@@ -71,7 +71,7 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
             }
         }
 
-        // Core's Def types are 0.4.0 work in progress; when they exist, read them by reflection and mark the
+        // Core's Def types arrive with its 0.5.0 model; when they exist, read them by reflection and mark the
         // rows source='def' so the built-in seed never overwrites them again.
         private static int SyncCoreDefs(VocabularyStore store)
         {

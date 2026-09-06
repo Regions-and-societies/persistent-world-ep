@@ -4,7 +4,7 @@ namespace RegionsAndSocieties.PersistentWorld.Db
 {
     /// <summary>
     /// The per-world database's tables, created and migrated in place. Version 2 mirrors Core's locked
-    /// demographic model (Core-MMF <c>Design/DEMOGRAPHIC_MODEL.md</c>, 0.4.0 keystone): xenotype cohorts are
+    /// demographic model (Core-MMF <c>Design/DEMOGRAPHIC_MODEL.md</c>, locked for Core 0.5.0): xenotype cohorts are
     /// the unit, the region is an aggregate, the graph steps once per demographic year, and every axis is
     /// tracked per cohort. Four groups of tables:
     /// <list type="bullet">
@@ -31,7 +31,7 @@ namespace RegionsAndSocieties.PersistentWorld.Db
         public const int Version = 2;
 
         /// <summary>The Core design this schema mirrors; stored in <c>meta</c> so an analysis knows what it reads.</summary>
-        public const string ModelVersion = "0.4.0 keystone (topology locked 2026-09-06)";
+        public const string ModelVersion = "Core demographic model (topology locked 2026-09-06; lands in Core 0.5.0)";
 
         public static void Ensure(SqliteConnection c, string worldId, int worldSeed)
         {

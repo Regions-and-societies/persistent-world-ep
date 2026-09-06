@@ -105,7 +105,7 @@ branched out from under you — is handled by giving every save file its own pla
 
 ### Schema v2: the tables mirror Core's locked demographic model (2026-09-06)
 
-Core's `Design/DEMOGRAPHIC_MODEL.md` (0.4.0 keystone, topology locked) is the spec the history tables
+Core's `Design/DEMOGRAPHIC_MODEL.md` (topology locked 2026-09-06, lands in Core 0.5.0 after 0.4.0 was split) is the spec the history tables
 follow: **xenotype cohorts are the unit, the region is a population‑weighted aggregate, the influence
 graph steps once per demographic year, and every axis is tracked per cohort.** Core simulates that
 model and emits the numbers; this EP records them and resolves them into people.

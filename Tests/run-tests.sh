@@ -176,7 +176,7 @@ run_suite_db db \
     Tests/DbTests.cs \
     $POPULATION_PURE $CORE_RULES $DB_SRC
 
-# Schema v2 (Core's 0.4.0 demographic model): migration, the built-in vocabulary, per-year history tables,
+# Schema v2 (Core's demographic model (Core 0.5.0)): migration, the built-in vocabulary, per-year history tables,
 # person events along a lineage, and collection taking history with it.
 run_suite_db history \
     Tests/HistoryTests.cs \
