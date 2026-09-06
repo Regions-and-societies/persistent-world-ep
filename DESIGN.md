@@ -1,6 +1,6 @@
 # Persistent World — Expansion Pack (design)
 
-**Status:** in development — milestone `0.1.0 Derived Planet` (branch `release/0.1.0`). See *Decisions for 0.1.0* at the end.
+**Status:** in development — milestone `0.1.0 Deterministic Census` (branch `release/0.1.0`). See *Decisions for 0.1.0* at the end.
 **Series:** Regions and Societies expansion pack (EP), alongside `World-Map-Export-EP`.
 **Depends on:** Regions and Societies Core (either edition — MMF or RP2), for its region
 demographic aggregates. No hard `modDependency` (the two Core editions are mutually exclusive);
@@ -140,10 +140,10 @@ Cost is therefore bounded to what the player actually touches, not planet popula
 
 ## Decisions for 0.1.0 (settled 2026-09-05)
 
-**Scope.** All seven design issues ship in `0.1.0 Derived Planet` (#1 scaffold, #2 sampler, #3 async
+**Scope.** All seven design issues ship in `0.1.0 Deterministic Census` (#1 scaffold, #2 sampler, #3 async
 loop, #4 world‑pawn linkage, #5 query index, #6 export sidecar, #7 households). The focus is **raw
 population numbers**: individuals are placeholders — an index slot per tile with sampled demographics,
-no name or personality. Persistent, named individuals are `0.2.0 Persistent Individuals`.
+no name or personality. Tunable, relational individuals are `0.2.0 Conditional Model`; movement and history are `0.3.0 Demographic History`.
 
 **Promotion rule → 0.2.0 (#8).** Not needed for a derived‑only population. What #4 delivers in 0.1.0 is
 the *linkage*: every existing Verse world pawn with a home tile is bound to one derived index slot on
@@ -166,3 +166,46 @@ across rebuilds for as long as the tile's population is.
 **Game versions.** RimWorld 1.6 only, matching Core (which now uses 1.6‑only APIs).
 
 **World‑Map‑Export as a consumer.** Deferred; not an issue in this milestone.
+
+---
+
+## Vision: persistent demographic history (settled 2026-09-05)
+
+**The split.** Core provides the deltas; this expansion provides the persistence and the history. Core
+shifts the regional numbers over time (growth, migration passes, stress, territory change) and exposes
+hooks so that shift can be overridden — good enough for most players, which is why it lives in Core. This
+EP turns the shift into a *true* one: a stationary list of every person, a record of what changed for
+whom, and answers that are definite rather than probabilistic. Person 1600 either holds a doctorate or
+does not, and the answer never changes unless history changes it.
+
+**Identity is pawn‑bound, never territory‑bound.** A person's id is a 64‑bit mix of the world seed, the
+birth tile, and the birth index. It is opaque, unique per world, and never changes. Where they live is a
+mutable attribute. This is the critical layer: without it nobody can relocate, and relationships and
+history have nothing to hang on.
+
+**Baseline plus overlay, state not history.** The baseline is the deterministic birth list, derived from
+seed and never stored. The overlay is one sparse record per person whose state differs from birth — home
+tile, alive, household, later class and relationships. A person who never changed costs nothing; a person
+who moved five times costs one record. Storage is bounded by how many people ever changed, never by
+elapsed time, and there is no replay. The overlay rides inside the `.rws`, packed. The history — the
+sequence of deltas — goes to the sidecar on disk, for analysis and tuning, never into the save.
+
+**Dynamics are filter, sample, commit.** A pass runs off‑thread over the materialized view: select
+candidates by filter, score destinations, sample who changes with each person's own seeded stream, emit
+a delta set. The main thread commits it to the overlay; the next build folds it in. The same snapshot →
+compute → swap shape as the build itself. Rules: displacement from war; nearest‑first with hard
+ideology/xenotype barriers; cost of living and housing as soft costs; brain drain and recruitment as
+education‑ and sector‑conditional attraction.
+
+**Lookup tables are the model.** Each attribute is drawn from a small table conditional on what was
+already drawn (education given sex and age, class given education, partner's xenotype given own). The
+tables are the tuning knobs; the CSV and the crosstab dump are how a knob's effect is read.
+
+**On SQLite.** The in‑memory index already gives the SQL‑shaped operation this needs — apply a
+calculation to every person matching a filter — in milliseconds at 100k people, with the save as the
+persistence. A SQLite‑backed store can sit behind the same overlay interface later for the full
+grand‑vision analysis; it is not on the in‑game path.
+
+**Milestones.** `0.1.0 Deterministic Census` (the baseline, with pawn‑bound identity), `0.2.0 Conditional
+Model` (lookup tables, relationships), `0.3.0 Demographic History` (consume Core deltas, migration,
+history log, hooks, aggregation flip).
