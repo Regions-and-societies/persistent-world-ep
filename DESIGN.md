@@ -174,11 +174,14 @@ for as long as the tile's residents are.
 ## Vision: persistent demographic history (settled 2026-09-05)
 
 **The split.** Core provides the deltas; this expansion provides the persistence and the history. Core
-shifts the regional numbers over time (growth, migration passes, stress, territory change) and exposes
-hooks so that shift can be overridden — good enough for most players, which is why it lives in Core. This
-EP turns the shift into a *true* one: a stationary list of every person, a record of what changed for
-whom, and answers that are definite rather than probabilistic. Person 1600 either holds a doctorate or
-does not, and the answer never changes unless history changes it.
+keeps tracking the top‑level generic numbers per region — birth rate, growth, migration totals, stress,
+territory change — and exposes hooks so that shift can be overridden; good enough for most players,
+which is why it lives in Core. If a region's birth rate is low, Core still tracks the birth rate. What
+this EP does is resolve those numbers into *people*: which xenotypes are growing and which are not,
+because of who is connected to whom — who partners with whom, whose children inherit what, who left and
+who arrived. A stationary list of every person, a record of what changed for whom, and answers that are
+definite rather than probabilistic. Person 1600 either holds a doctorate or does not, and the answer
+never changes unless history changes it.
 
 **Identity is pawn‑bound, never territory‑bound.** A person's id is a 64‑bit mix of the world seed, the
 birth tile, and the birth index. It is opaque, unique per world, and never changes. Where they live is a
