@@ -21,7 +21,7 @@ namespace IndividualSamplerTests
             Individual a = IndividualSampler.Sample(Seed, 8421, 37, city);
             Individual b = IndividualSampler.Sample(Seed, 8421, 37, city);
             Check("same inputs, same person", Same(a, b));
-            Check("id packs tile and index", a.Id == (((long)8421 << 32) | 37) && a.tile == 8421 && a.index == 37);
+            Check("identity is stamped", a.id == PersonId.Make(Seed, 8421, 37) && a.tile == 8421 && a.birthTile == 8421 && a.birthIndex == 37);
             Check("a different index is (almost surely) a different person", Differs(a, IndividualSampler.Sample(Seed, 8421, 38, city)));
             Check("a different tile is (almost surely) a different person", Differs(a, IndividualSampler.Sample(Seed, 8422, 37, city)));
             Check("a different world seed is (almost surely) a different person", Differs(a, IndividualSampler.Sample(Seed + 1, 8421, 37, city)));
@@ -135,7 +135,7 @@ namespace IndividualSamplerTests
         }
 
         private static bool Same(Individual a, Individual b)
-            => a.tile == b.tile && a.index == b.index && a.female == b.female && a.age == b.age && a.ageBucket == b.ageBucket
+            => a.id == b.id && a.tile == b.tile && a.birthIndex == b.birthIndex && a.female == b.female && a.age == b.age && a.ageBucket == b.ageBucket
             && a.education == b.education && a.ses == b.ses && a.wealth == b.wealth && a.work == b.work && a.sector == b.sector
             && a.raceKey == b.raceKey && a.factionKey == b.factionKey && a.ideoKey == b.ideoKey;
 

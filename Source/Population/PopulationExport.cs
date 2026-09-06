@@ -8,27 +8,27 @@ using RegionsAndSocieties.Demographics;
 namespace RegionsAndSocieties.PersistentWorld.Population
 {
     /// <summary>
-    /// The per-save sidecar (#6): the full materialized view — derived majority plus the linked overlay —
+    /// The per-save sidecar (#6): the full materialized view — derived majority plus the overlay —
     /// serialized to disk for external tools and reload. A <b>rebuildable cache, never the source of
-    /// truth</b>: the .rws carries the only authoritative state (the link table), and a missing or stale
-    /// file is a non-event because the worker regenerates it on the cadence.
+    /// truth</b>: the .rws carries the only authoritative state (the overlay and the link table), and a
+    /// missing or stale file is a non-event because the worker regenerates it on the cadence.
     ///
     /// <para>Pure: writes to a <see cref="TextWriter"/>, reads from a <see cref="TextReader"/>, no file
     /// paths, no game types — so the round trip is tested without a game and the writer can run on the
     /// background thread over the immutable dataset. The JSON is one self-describing document; each person
-    /// is a compact numeric row in a fixed column order (see <see cref="Columns"/>). The CSV is the same
-    /// rows with a header, for spreadsheets.</para>
+    /// is a compact row in a fixed column order (see <see cref="Columns"/>), grouped by home tile as in the
+    /// dataset, the id as sixteen hex digits. The CSV is the same rows with a header, for spreadsheets.</para>
     /// </summary>
     public static class PopulationExport
     {
         /// <summary>Bumped when the row layout changes; a reader refuses a file it does not understand.</summary>
-        public const int SchemaVersion = 2;
+        public const int SchemaVersion = 3;
 
         /// <summary>Row column order, for both formats.</summary>
         public static readonly string[] Columns =
         {
-            "tile", "index", "female", "age", "ageBucket", "education", "class", "wealth", "work", "sector", "race", "faction", "ideo", "pawn",
-            "household", "householdSize",
+            "id", "birthTile", "birthIndex", "home", "female", "age", "ageBucket", "education", "class", "wealth", "work", "sector",
+            "race", "faction", "ideo", "pawn", "household", "householdSize",
         };
 
         // ---------------------------------------------------------------- JSON out
@@ -44,15 +44,16 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             w.Write(",\"buildMillis\":"); w.Write(ds.buildMillis);
             w.Write(",\"people\":"); w.Write(ds.Count);
             w.Write(",\"linked\":"); w.Write(ds.LinkedCount);
+            w.Write(",\"overlay\":"); w.Write(s.deltas.Length);
             w.Write(",\"regionIds\":"); WriteInts(w, s.regionIds);
             w.Write(",\"raceLabels\":"); WriteStrings(w, s.raceLabels);
             w.Write(",\"factionLabels\":"); WriteStrings(w, s.factionLabels);
             w.Write(",\"ideoLabels\":"); WriteStrings(w, s.ideoLabels);
-            w.Write(",\"tiles\":[");
-            for (int i = 0; i < s.tiles.Length; i++)
+            w.Write(",\"tiles\":[");   // home tiles: [tile, regionSlot, residents]
+            for (int i = 0; i < ds.tiles.Length; i++)
             {
                 if (i > 0) w.Write(',');
-                w.Write('['); w.Write(s.tiles[i].tile); w.Write(','); w.Write(s.tiles[i].region); w.Write(','); w.Write(s.tiles[i].population); w.Write(']');
+                w.Write('['); w.Write(ds.tiles[i].tile); w.Write(','); w.Write(ds.tiles[i].region); w.Write(','); w.Write(ds.tiles[i].population); w.Write(']');
             }
             w.Write("],\"columns\":"); WriteStrings(w, Columns);
             w.Write(",\"rows\":[");
@@ -60,7 +61,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             {
                 if (i > 0) w.Write(',');
                 if ((i & 63) == 0) w.Write('\n');
-                WriteRow(w, in ds.people[i], '[', ']', ',');
+                WriteRow(w, in ds.people[i], '[', ']', ',', true);
             }
             w.Write("]}\n");
         }
@@ -73,19 +74,22 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             w.Write(string.Join(",", Columns)); w.Write(",region\n");
             for (int i = 0; i < ds.people.Length; i++)
             {
-                WriteRow(w, in ds.people[i], '\0', '\0', ',');
+                WriteRow(w, in ds.people[i], '\0', '\0', ',', false);
                 w.Write(','); w.Write(ds.RegionOf(in ds.people[i])); w.Write('\n');
             }
         }
 
-        private static void WriteRow(TextWriter w, in Individual p, char open, char close, char sep)
+        private static void WriteRow(TextWriter w, in Individual p, char open, char close, char sep, bool quoteId)
         {
             if (open != '\0') w.Write(open);
-            w.Write(p.tile); w.Write(sep); w.Write(p.index); w.Write(sep); w.Write(p.female ? 1 : 0); w.Write(sep);
-            w.Write(p.age); w.Write(sep); w.Write((int)p.ageBucket); w.Write(sep); w.Write((int)p.education); w.Write(sep);
-            w.Write((int)p.ses); w.Write(sep); w.Write(p.wealth); w.Write(sep); w.Write((int)p.work); w.Write(sep);
-            w.Write((int)p.sector); w.Write(sep); w.Write(p.raceKey); w.Write(sep); w.Write(p.factionKey); w.Write(sep);
-            w.Write(p.ideoKey); w.Write(sep); w.Write(p.pawnId); w.Write(sep);
+            if (quoteId) w.Write('"');
+            w.Write(PersonId.ToHex(p.id));
+            if (quoteId) w.Write('"');
+            w.Write(sep); w.Write(p.birthTile); w.Write(sep); w.Write(p.birthIndex); w.Write(sep); w.Write(p.tile); w.Write(sep);
+            w.Write(p.female ? 1 : 0); w.Write(sep); w.Write(p.age); w.Write(sep); w.Write((int)p.ageBucket); w.Write(sep);
+            w.Write((int)p.education); w.Write(sep); w.Write((int)p.ses); w.Write(sep); w.Write(p.wealth); w.Write(sep);
+            w.Write((int)p.work); w.Write(sep); w.Write((int)p.sector); w.Write(sep); w.Write(p.raceKey); w.Write(sep);
+            w.Write(p.factionKey); w.Write(sep); w.Write(p.ideoKey); w.Write(sep); w.Write(p.pawnId); w.Write(sep);
             w.Write(p.household); w.Write(sep); w.Write(p.householdSize);
             if (close != '\0') w.Write(close);
         }
@@ -94,8 +98,9 @@ namespace RegionsAndSocieties.PersistentWorld.Population
 
         /// <summary>Parse a sidecar written by <see cref="WriteJson"/> back into a dataset. Returns null for
         /// anything it cannot trust: unreadable text, a different schema, rows that do not match the tile
-        /// table. Never throws. The rebuilt snapshot carries the tiles, regions and labels but empty
-        /// profiles — it is a restored <i>result</i>, not something to rebuild from.</summary>
+        /// table, ids that do not match their birth coordinates. Never throws. The rebuilt snapshot carries
+        /// regions and labels but no births or profiles — it is a restored <i>result</i>, not something to
+        /// rebuild from.</summary>
         public static PopulationDataset ReadJson(TextReader r)
         {
             try
@@ -104,6 +109,7 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                 if (!(root is Dictionary<string, object> o)) return null;
                 if (Int(o, "schema") != SchemaVersion) return null;
 
+                int seed = Int(o, "worldSeed");
                 int[] regionIds = Ints(o, "regionIds");
                 string[] races = Strings(o, "raceLabels"), factions = Strings(o, "factionLabels"), ideos = Strings(o, "ideoLabels");
                 var tileList = o["tiles"] as List<object>;
@@ -122,9 +128,6 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                 }
                 if (total != rowList.Count) return null;
 
-                var snapshot = new PopulationSnapshot(Int(o, "worldSeed"), tiles, regionIds, new RegionProfile[regionIds.Length],
-                    races, factions, ideos, Int(o, "densityVersion"));
-
                 var tileStart = new int[tiles.Length + 1];
                 for (int i = 0; i < tiles.Length; i++) tileStart[i + 1] = tileStart[i] + Math.Max(0, tiles[i].population);
 
@@ -134,29 +137,35 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                 {
                     var c = rowList[i] as List<object>;
                     if (c == null || c.Count < Columns.Length) return null;
+                    if (!PersonId.TryParseHex(c[0] as string, out long id)) return null;
                     var p = new Individual
                     {
-                        tile = ToInt(c[0]), index = ToInt(c[1]), female = ToInt(c[2]) != 0, age = ToInt(c[3]),
-                        ageBucket = (AgeBucket)ToInt(c[4]), education = (EducationTier)ToInt(c[5]), ses = (SesTier)ToInt(c[6]),
-                        wealth = ToInt(c[7]), work = (WorkStatus)ToInt(c[8]), sector = (OccupationSector)ToInt(c[9]),
-                        raceKey = ToInt(c[10]), factionKey = ToInt(c[11]), ideoKey = ToInt(c[12]), pawnId = ToInt(c[13]),
-                        household = ToInt(c[14]), householdSize = ToInt(c[15]),
+                        id = id, birthTile = ToInt(c[1]), birthIndex = ToInt(c[2]), tile = ToInt(c[3]),
+                        female = ToInt(c[4]) != 0, age = ToInt(c[5]), ageBucket = (AgeBucket)ToInt(c[6]),
+                        education = (EducationTier)ToInt(c[7]), ses = (SesTier)ToInt(c[8]), wealth = ToInt(c[9]),
+                        work = (WorkStatus)ToInt(c[10]), sector = (OccupationSector)ToInt(c[11]),
+                        raceKey = ToInt(c[12]), factionKey = ToInt(c[13]), ideoKey = ToInt(c[14]), pawnId = ToInt(c[15]),
+                        household = ToInt(c[16]), householdSize = ToInt(c[17]),
                     };
-                    // Rows must sit exactly where the tile table says they do.
+                    if (p.id != PersonId.Make(seed, p.birthTile, p.birthIndex)) return null;
+                    // Rows must sit on the home tile the tile table says they do.
                     while (ti < tiles.Length && i >= tileStart[ti + 1]) ti++;
-                    if (ti >= tiles.Length || p.tile != tiles[ti].tile || p.index != i - tileStart[ti]) return null;
+                    if (ti >= tiles.Length || p.tile != tiles[ti].tile) return null;
                     if (p.pawnId != 0) linked++;
                     people[i] = p;
                 }
 
-                // Households are a pure function of (seed, tile, population), so the table is rebuilt rather
+                var snapshot = new PopulationSnapshot(seed, null, regionIds, null, races, factions, ideos, Int(o, "densityVersion"));
+
+                // Households are a pure function of (seed, home tile, residents), so the table is rebuilt rather
                 // than read; the rows' household columns must agree with it or the file is not ours.
-                HouseholdTable households = HouseholdTable.Build(snapshot);
+                HouseholdTable households = HouseholdTable.Build(seed, tiles);
                 for (int t = 0; t < tiles.Length; t++)
                     for (int i = tileStart[t]; i < tileStart[t + 1]; i++)
                         if (households.HouseholdOf(t, i - tileStart[t]) != people[i].household) return null;
 
-                return new PopulationDataset(snapshot, people, tileStart, Long(o, "buildMillis"), linked, null, households);
+                // The restored snapshot has no birth table, so region slots must come from the file's tile table.
+                return new PopulationDataset(snapshot, people, tiles, tileStart, Long(o, "buildMillis"), linked, null, households);
             }
             catch (Exception)
             {

@@ -158,10 +158,12 @@ in 0.1.0.
 `run-tests.sh`). The sampler, index, and household assembly are pure C# and get determinism and
 distribution‑fidelity assertions; anything that needs a live world is an in‑game check.
 
-**Individual identity.** Keyed `(tile, index)` as designed; `index` runs `0..populationAtTile`.
-Households (#7) are assembled deterministically per tile from `ResidenceRules` occupancy, keyed
-`(tile, residenceIndex)` with members as a contiguous run of index slots, so a household is stable
-across rebuilds for as long as the tile's population is.
+**Individual identity (revised by #9).** A person's id is a 64‑bit mix of the world seed, birth tile
+and birth index — opaque, unique, never changes. Birth index runs `0..birthsOnTile`. Home tile is a
+mutable attribute; the dataset is grouped by home and indexed by id. Households (#7) are assembled
+deterministically per *home* tile over its current residents from `ResidenceRules` occupancy, keyed
+`(tile, residenceIndex)` with members as a contiguous run, so a household is stable across rebuilds
+for as long as the tile's residents are.
 
 **Game versions.** RimWorld 1.6 only, matching Core (which now uses 1.6‑only APIs).
 

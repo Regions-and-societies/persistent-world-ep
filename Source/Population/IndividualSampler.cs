@@ -26,8 +26,9 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         private static readonly int[] WealthFloor = { 40, 200, 600, 1500 };
         private static readonly int[] WealthCeiling = { 199, 599, 1499, 4000 };
 
-        /// <summary>The seed of person <paramref name="index"/> on <paramref name="tile"/>. Distinct per
-        /// (tile, index), never zero, deterministic across machines.</summary>
+        /// <summary>The RNG seed of the person born at <paramref name="index"/> on <paramref name="tile"/>.
+        /// Distinct per (tile, index), never zero, deterministic across machines. (Their identity is
+        /// <see cref="PersonId.Make"/>; this only seeds their attribute draws.)</summary>
         public static uint PersonSeed(int worldSeed, int tile, int index)
             => DemographicsRules.TileSeed(worldSeed, tile, unchecked(PersonSaltBase + index));
 
@@ -41,7 +42,9 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             profile = profile ?? RegionProfile.Empty();
             uint rng = PersonSeed(worldSeed, tile, index);
 
-            var p = new Individual { tile = tile, index = index, household = -1 };   // households are stamped by the build (#7)
+            // Identity is fixed here and never changes; home starts as the birth tile (#9). Households are
+            // stamped by the build (#7).
+            var p = new Individual { id = PersonId.Make(worldSeed, tile, index), birthTile = tile, birthIndex = index, tile = tile, household = -1 };
 
             // 1. sex
             p.female = DemographicsRules.NextFloat(ref rng) < profile.femaleFraction;

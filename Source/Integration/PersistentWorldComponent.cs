@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using RegionsAndSocieties.PersistentWorld.Population;
@@ -13,7 +14,8 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
     /// without a Core edition — in which case it does nothing: every R&amp;S-typed call sits behind
     /// <see cref="PersistentWorldInit.Enabled"/> in its own method, so the JIT never touches a missing type.
     ///
-    /// <para>The scribed tracked overlay (#4) lives here too, so it travels inside the .rws.</para>
+    /// <para>The only authoritative per-person state lives here and travels inside the .rws: the sparse
+    /// overlay (#9, packed bytes) and the world-pawn link table (#4).</para>
     /// </summary>
     public class PersistentWorldComponent : WorldComponent
     {
@@ -23,16 +25,17 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         private readonly MaterializationLoop loop = new MaterializationLoop();
         private readonly PopulationCatalogue catalogue = new PopulationCatalogue();
         private readonly WorldPawnLinks links = new WorldPawnLinks();
+        private readonly PopulationOverlay overlay = new PopulationOverlay();
         private List<WorldPawnLinkRecord> linkRecords;   // scribe buffer for <see cref="links"/>
+        private string overlayBlob;                       // scribe buffer for <see cref="overlay"/> (base64)
         private bool rebuildRequested;
         private int lastStartTick = int.MinValue;
-
-        private Task<PopulationDataset> restore;   // the sidecar read kicked off on load (#6)
+        private Task<PopulationDataset> restore;          // the sidecar read kicked off on load (#6)
 
         public PersistentWorldComponent(World world) : base(world)
         {
             // Every published build refreshes the sidecar; a restored one does not (it came from there).
-            loop.Swapped += ds => { if (ds.buildMillis >= 0 && loop.Swaps > 0) PopulationSidecar.WriteAsync(ds); };
+            loop.Swapped += ds => { if (loop.Swaps > 0) PopulationSidecar.WriteAsync(ds); };
         }
 
         /// <summary>The component of the current world, or null when no world is loaded.</summary>
@@ -46,8 +49,11 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
 
         public MaterializationLoop Loop => loop;
 
-        /// <summary>The scribed world-pawn → slot table (#4). Reconciled on every snapshot.</summary>
+        /// <summary>The scribed world-pawn → person table (#4). Reconciled on every snapshot.</summary>
         public WorldPawnLinks Links => links;
+
+        /// <summary>The scribed sparse overlay (#9): every person whose state differs from birth.</summary>
+        public PopulationOverlay Overlay => overlay;
 
         /// <summary>Ask for a rebuild at the next tick instead of waiting for the cadence (an event just
         /// changed the population and a consumer wants a fresh dataset). Coalesces: many requests, one build.</summary>
@@ -100,7 +106,7 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         // Kept separate so the R&S-typed snapshot code only JITs when Core is present and a build starts.
         private void StartBuild(int tick)
         {
-            PopulationSnapshot snapshot = PopulationSnapshotBuilder.Take(catalogue, links);
+            PopulationSnapshot snapshot = PopulationSnapshotBuilder.Take(catalogue, links, overlay);
             if (loop.TryStart(snapshot))
             {
                 rebuildRequested = false;
@@ -116,7 +122,7 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
             loop.Cancel();
             loop.Wait();
             loop.Poll();
-            loop.BuildNow(PopulationSnapshotBuilder.Take(catalogue, links));
+            loop.BuildNow(PopulationSnapshotBuilder.Take(catalogue, links, overlay));
             lastStartTick = Find.TickManager?.TicksGame ?? 0;
             rebuildRequested = false;
             return loop.Current;
@@ -126,21 +132,32 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         {
             base.ExposeData();
 
-            // The tracked overlay (#4) rides inside the .rws: three ints per linked world pawn, nothing else.
             if (Scribe.mode == LoadSaveMode.Saving)
             {
                 linkRecords = new List<WorldPawnLinkRecord>();
-                foreach (PawnSlot slot in links.Records()) linkRecords.Add(new WorldPawnLinkRecord(slot));
+                foreach (PawnLink link in links.Records()) linkRecords.Add(new WorldPawnLinkRecord(link));
+                byte[] packed = overlay.ToBytes();
+                overlayBlob = packed.Length == 0 ? null : Convert.ToBase64String(packed);
             }
+
+            // Three ints and a long per linked pawn; 21 packed bytes per changed person. Nothing else.
             Scribe_Collections.Look(ref linkRecords, "worldPawnLinks", LookMode.Deep);
+            Scribe_Values.Look(ref overlayBlob, "overlay");
+
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
-                var slots = new List<PawnSlot>();
+                var loaded = new List<PawnLink>();
                 if (linkRecords != null)
                     foreach (WorldPawnLinkRecord r in linkRecords)
-                        if (r != null && r.tile >= 0 && r.index >= 0) slots.Add(r.ToSlot());
-                links.Load(slots);
+                        if (r != null && r.id != 0 && r.birthTile >= 0 && r.birthIndex >= 0) loaded.Add(r.ToLink());
+                links.Load(loaded);
                 linkRecords = null;
+
+                byte[] packed = null;
+                try { if (!string.IsNullOrEmpty(overlayBlob)) packed = Convert.FromBase64String(overlayBlob); }
+                catch (FormatException) { Log.Warning("[R&S PersistentWorld] The saved overlay was unreadable; starting from the birth baseline."); }
+                overlay.Load(packed);
+                overlayBlob = null;
             }
         }
     }

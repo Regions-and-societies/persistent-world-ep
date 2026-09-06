@@ -127,8 +127,8 @@ namespace HouseholdTests
         // Flip the household column of person #0 of tile 12 to a different household.
         private static string Tamper(string json, PopulationDataset ds)
         {
-            ds.TryGet(12, 0, out Individual p);
-            string row = "[12,0," + (p.female ? 1 : 0) + "," + p.age + "," + (int)p.ageBucket + "," + (int)p.education + "," + (int)p.ses + "," + p.wealth + "," + (int)p.work + "," + (int)p.sector + "," + p.raceKey + "," + p.factionKey + "," + p.ideoKey + "," + p.pawnId + "," + p.household + "," + p.householdSize + "]";
+            ds.TryGetBorn(12, 0, out Individual p);
+            string row = "[\"" + PersonId.ToHex(p.id) + "\",12,0,12," + (p.female ? 1 : 0) + "," + p.age + "," + (int)p.ageBucket + "," + (int)p.education + "," + (int)p.ses + "," + p.wealth + "," + (int)p.work + "," + (int)p.sector + "," + p.raceKey + "," + p.factionKey + "," + p.ideoKey + "," + p.pawnId + "," + p.household + "," + p.householdSize + "]";
             string bad = row.Substring(0, row.LastIndexOf(',', row.LastIndexOf(',') - 1)) + "," + (p.household + 1) + "," + p.householdSize + "]";
             return json.Contains(row) ? json.Replace(row, bad) : "tampered row not found";
         }

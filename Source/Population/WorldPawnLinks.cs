@@ -3,11 +3,11 @@ using System.Collections.Generic;
 
 namespace RegionsAndSocieties.PersistentWorld.Population
 {
-    /// <summary>A real pawn that wants a slot in the derived population: who it is, where it lives, what it is.</summary>
+    /// <summary>A real pawn that wants to be a person in the census: who it is, where it lives, what it is.</summary>
     public struct LinkCandidate
     {
         public int pawnId;      // Verse thingIDNumber — stable for the life of the pawn and unique per save
-        public int homeTile;    // the populated tile the pawn belongs to
+        public int homeTile;    // the tile the pawn lives on now
         public bool female;
         public int age;         // biological years
         public int raceKey;     // catalogue keys; -1 = none
@@ -15,13 +15,14 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public int ideoKey;
     }
 
-    /// <summary>A slot that is backed by a real pawn, carried in the snapshot so the build can overlay the
-    /// pawn's actual attributes on the derived person there.</summary>
+    /// <summary>A person who is a real pawn, carried in the snapshot so the build can put the pawn's actual
+    /// attributes on them. Birth coordinates let the build find the baseline row without a lookup.</summary>
     public struct LinkedPerson
     {
+        public long id;
+        public int birthTile;
+        public int birthIndex;
         public int pawnId;
-        public int tile;
-        public int index;
         public bool female;
         public int age;
         public int raceKey;
@@ -29,125 +30,132 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public int ideoKey;
     }
 
-    /// <summary>One scribed record: which slot a pawn holds. The only state this feature saves.</summary>
-    public struct PawnSlot
+    /// <summary>One scribed link: which person a pawn is.</summary>
+    public struct PawnLink
     {
         public int pawnId;
-        public int tile;
-        public int index;
+        public long id;
+        public int birthTile;
+        public int birthIndex;
     }
 
     /// <summary>
-    /// The world-pawn linkage rule (#4, 0.1.0 scope): every real world pawn with a home tile is bound to
-    /// one derived index slot on that tile, so a query can tell a <c>Pawn</c>-backed row from a derived
-    /// one and the row reports the pawn's real sex, age and xenotype. Pure: pawns arrive as
-    /// <see cref="LinkCandidate"/>s, the table is plain records, and the population of a tile is a
-    /// delegate — so the rule runs and is tested without a game.
+    /// The world-pawn linkage rule (#4, on pawn-bound identity #9): every real world pawn with a home is
+    /// one specific person, chosen once from the people born on the tile where the pawn was first seen and
+    /// kept for the life of the pawn. When the pawn is somewhere else than its person's home, the reconcile
+    /// moves the person there through the overlay — the first real movement in the census. Pure: pawns
+    /// arrive as <see cref="LinkCandidate"/>s, births per tile and the overlay are handed in.
     ///
-    /// <para><b>Stability.</b> A link survives as long as the pawn is still a candidate on the same tile and
-    /// its slot still exists (index &lt; tile population). A new pawn takes the slot its id hashes to,
-    /// probing forward past occupied slots, so links do not depend on enumeration order. Candidates are
+    /// <para><b>Stability.</b> A link survives as long as the pawn is still a candidate and its person's
+    /// birth slot still exists. A new pawn takes the birth slot its id hashes to on its home tile, probing
+    /// forward past slots other pawns hold, so links do not depend on enumeration order; candidates are
     /// processed in pawn-id order for the same reason. Cost is O(world pawns), never O(population).</para>
     /// </summary>
     public sealed class WorldPawnLinks
     {
-        private readonly Dictionary<int, PawnSlot> byPawn = new Dictionary<int, PawnSlot>();
+        private readonly Dictionary<int, PawnLink> byPawn = new Dictionary<int, PawnLink>();
 
         public int Count => byPawn.Count;
 
-        /// <summary>The slot a pawn holds, if it is linked.</summary>
-        public bool TryGet(int pawnId, out PawnSlot slot) => byPawn.TryGetValue(pawnId, out slot);
+        /// <summary>The person a pawn is, if it is linked.</summary>
+        public bool TryGet(int pawnId, out PawnLink link) => byPawn.TryGetValue(pawnId, out link);
 
         /// <summary>Every link, in pawn-id order (for scribing and the debug dump).</summary>
-        public List<PawnSlot> Records()
+        public List<PawnLink> Records()
         {
-            var list = new List<PawnSlot>(byPawn.Values);
+            var list = new List<PawnLink>(byPawn.Values);
             list.Sort((a, b) => a.pawnId.CompareTo(b.pawnId));
             return list;
         }
 
         /// <summary>Replace the table wholesale (from a loaded save). Duplicate pawn ids keep the last record.</summary>
-        public void Load(IEnumerable<PawnSlot> records)
+        public void Load(IEnumerable<PawnLink> records)
         {
             byPawn.Clear();
             if (records == null) return;
-            foreach (PawnSlot r in records) byPawn[r.pawnId] = r;
+            foreach (PawnLink r in records) if (r.id != 0) byPawn[r.pawnId] = r;
         }
 
         /// <summary>
-        /// Bring the table in line with the current candidates: keep links that are still valid, re-home
-        /// pawns whose tile or slot went away, link new pawns, drop pawns that are gone. Returns the linked
-        /// people for the snapshot, sorted by (tile, index). <paramref name="populationOf"/> is the head
-        /// count of a tile; a candidate whose home tile has nobody stays unlinked.
+        /// Bring the table in line with the current candidates: keep links that still hold, link new pawns to
+        /// a person born where they live, drop pawns that are gone, and move each linked person to where
+        /// its pawn is now (through <paramref name="overlay"/>). Returns the linked people for the snapshot,
+        /// sorted by id. <paramref name="birthsOn"/> is how many people are born on a tile; a candidate on a
+        /// tile with no births stays unlinked. <paramref name="worldSeed"/> makes the ids.
         /// </summary>
-        public LinkedPerson[] Reconcile(IList<LinkCandidate> candidates, Func<int, int> populationOf)
+        public LinkedPerson[] Reconcile(int worldSeed, IList<LinkCandidate> candidates, Func<int, int> birthsOn, PopulationOverlay overlay)
         {
-            populationOf = populationOf ?? (_ => 0);
+            birthsOn = birthsOn ?? (_ => 0);
             var sorted = new List<LinkCandidate>(candidates ?? Array.Empty<LinkCandidate>());
             sorted.Sort((a, b) => a.pawnId.CompareTo(b.pawnId));
 
-            // Pass 1: which existing links still hold? Occupancy is per tile, keyed by slot.
-            var occupied = new HashSet<long>();
-            var keep = new Dictionary<int, PawnSlot>();
+            // Pass 1: which existing links still hold? Their people stay taken.
+            var taken = new HashSet<long>();
+            var keep = new Dictionary<int, PawnLink>();
             foreach (LinkCandidate c in sorted)
             {
-                if (!byPawn.TryGetValue(c.pawnId, out PawnSlot old)) continue;
-                if (old.tile != c.homeTile || old.index < 0 || old.index >= populationOf(old.tile)) continue;
+                if (!byPawn.TryGetValue(c.pawnId, out PawnLink old)) continue;
+                if (old.birthIndex < 0 || old.birthIndex >= birthsOn(old.birthTile)) continue;
+                if (old.id != PersonId.Make(worldSeed, old.birthTile, old.birthIndex)) continue;   // another world's link
                 keep[c.pawnId] = old;
-                occupied.Add(Key(old.tile, old.index));
+                taken.Add(old.id);
             }
 
-            // Pass 2: place everyone else.
+            // Pass 2: place everyone, then make sure each person lives where its pawn is.
             var result = new List<LinkedPerson>(sorted.Count);
+            var dropped = new List<PawnLink>();
+            foreach (PawnLink old in byPawn.Values) if (!keep.ContainsKey(old.pawnId)) dropped.Add(old);
             byPawn.Clear();
             foreach (LinkCandidate c in sorted)
             {
-                if (!keep.TryGetValue(c.pawnId, out PawnSlot slot))
+                if (!keep.TryGetValue(c.pawnId, out PawnLink link))
                 {
-                    int pop = populationOf(c.homeTile);
-                    if (pop <= 0) continue;
-                    int index = FindFree(c.pawnId, c.homeTile, pop, occupied);
-                    if (index < 0) continue;   // tile full of linked pawns — leave unlinked rather than evict
-                    slot = new PawnSlot { pawnId = c.pawnId, tile = c.homeTile, index = index };
-                    occupied.Add(Key(slot.tile, slot.index));
+                    int births = birthsOn(c.homeTile);
+                    if (births <= 0) continue;
+                    int index = FindFree(worldSeed, c.pawnId, c.homeTile, births, taken, out long id);
+                    if (index < 0) continue;   // every person born here is already a pawn — leave unlinked, never evict
+                    link = new PawnLink { pawnId = c.pawnId, id = id, birthTile = c.homeTile, birthIndex = index };
+                    taken.Add(id);
                 }
-                byPawn[c.pawnId] = slot;
+                byPawn[c.pawnId] = link;
+                overlay?.Move(link.id, link.birthTile, link.birthIndex, c.homeTile);
                 result.Add(new LinkedPerson
                 {
-                    pawnId = c.pawnId, tile = slot.tile, index = slot.index,
+                    id = link.id, birthTile = link.birthTile, birthIndex = link.birthIndex, pawnId = c.pawnId,
                     female = c.female, age = c.age, raceKey = c.raceKey, factionKey = c.factionKey, ideoKey = c.ideoKey,
                 });
             }
 
-            result.Sort((a, b) => a.tile != b.tile ? a.tile.CompareTo(b.tile) : a.index.CompareTo(b.index));
+            // A person whose pawn is gone stays where the pawn left them; nothing to undo.
+            result.Sort((a, b) => a.id.CompareTo(b.id));
             return result.ToArray();
         }
 
-        /// <summary>The slot a pawn id prefers on a tile of <paramref name="population"/>: a hash, so it is
-        /// spread across the tile and independent of the order pawns were seen in.</summary>
-        public static int PreferredIndex(int pawnId, int tile, int population)
+        /// <summary>The birth slot a pawn id prefers on a tile with <paramref name="births"/> people: a hash,
+        /// so it is spread across the tile and independent of the order pawns were seen in.</summary>
+        public static int PreferredIndex(int pawnId, int tile, int births)
         {
-            if (population <= 0) return -1;
+            if (births <= 0) return -1;
             unchecked
             {
                 uint h = (uint)pawnId * 0x9E3779B1u;
                 h ^= (uint)tile * 0x85EBCA77u;
                 h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
-                return (int)(h % (uint)population);
+                return (int)(h % (uint)births);
             }
         }
 
-        private static int FindFree(int pawnId, int tile, int population, HashSet<long> occupied)
+        private static int FindFree(int worldSeed, int pawnId, int tile, int births, HashSet<long> taken, out long id)
         {
-            int start = PreferredIndex(pawnId, tile, population);
-            for (int n = 0; n < population; n++)
+            int start = PreferredIndex(pawnId, tile, births);
+            for (int n = 0; n < births; n++)
             {
-                int index = (start + n) % population;
-                if (!occupied.Contains(Key(tile, index))) return index;
+                int index = (start + n) % births;
+                id = PersonId.Make(worldSeed, tile, index);
+                if (!taken.Contains(id)) return index;
             }
+            id = 0;
             return -1;
         }
-
-        private static long Key(int tile, int index) => ((long)tile << 32) | (uint)index;
     }
 }

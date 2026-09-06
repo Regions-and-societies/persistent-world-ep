@@ -38,16 +38,16 @@ namespace RegionsAndSocieties.PersistentWorld.UI
             PopulationDataset ds = comp.Loop.Current;
             var sb = new StringBuilder();
             sb.AppendLine("--- R&S PW: linked world pawns (#4) ---");
-            List<PawnSlot> records = comp.Links.Records();
-            sb.AppendLine($"{records.Count} link(s) in the scribed table; {ds.LinkedCount} applied in the current dataset.");
+            List<PawnLink> records = comp.Links.Records();
+            sb.AppendLine($"{records.Count} link(s) in the scribed table; {ds.LinkedCount} applied in the current dataset; overlay holds {comp.Overlay.Count} changed people.");
             int shown = 0;
-            foreach (PawnSlot r in records)
+            foreach (PawnLink r in records)
             {
                 if (shown++ >= 60) { sb.AppendLine("  ..."); break; }
-                if (ds.TryGet(r.tile, r.index, out Individual p) && p.pawnId == r.pawnId)
-                    sb.AppendLine($"  pawn {r.pawnId,-8} tile {r.tile,-6} #{r.index,-5} {(p.female ? "F" : "M")} age {p.age,3} {p.ageBucket,-10} {p.education,-10} {p.ses,-11} {p.work,-10} faction={PersistentWorldApi.Label(Dimension.Faction, p.factionKey)} race={PersistentWorldApi.Label(Dimension.Xenotype, p.raceKey)}");
+                if (ds.TryGetById(r.id, out Individual p) && p.pawnId == r.pawnId)
+                    sb.AppendLine($"  pawn {r.pawnId,-8} person {PersonId.ToHex(r.id)} born {r.birthTile}#{r.birthIndex} home {p.tile,-6} {(p.female ? "F" : "M")} age {p.age,3} {p.ageBucket,-10} {p.education,-10} {p.ses,-11} {p.work,-10} faction={PersistentWorldApi.Label(Dimension.Faction, p.factionKey)} race={PersistentWorldApi.Label(Dimension.Xenotype, p.raceKey)}");
                 else
-                    sb.AppendLine($"  pawn {r.pawnId,-8} tile {r.tile,-6} #{r.index,-5} (not applied in the current dataset — awaiting the next build)");
+                    sb.AppendLine($"  pawn {r.pawnId,-8} person {PersonId.ToHex(r.id)} born {r.birthTile}#{r.birthIndex} (not applied in the current dataset — awaiting the next build)");
             }
             Log.Message(sb.ToString());
         }
@@ -60,7 +60,7 @@ namespace RegionsAndSocieties.PersistentWorld.UI
             var sb = new StringBuilder();
             sb.AppendLine("--- R&S PW: population dump (#5) ---");
             if (!PersistentWorldApi.IsAvailable) sb.AppendLine("(not available: no Core edition or no world)");
-            sb.AppendLine($"build #{ds.buildSerial}  people={ds.Count:N0}  households={ds.HouseholdCount:N0}  tiles={ds.TileCount:N0}  regions={ds.RegionIds.Length}  linked={ds.LinkedCount}  build={ds.buildMillis} ms  seed={ds.snapshot.worldSeed}  densityVersion={ds.snapshot.densityVersion}");
+            sb.AppendLine($"build #{ds.buildSerial}  people={ds.Count:N0}  households={ds.HouseholdCount:N0}  homeTiles={ds.TileCount:N0}  regions={ds.RegionIds.Length}  linked={ds.LinkedCount}  moved={ds.MovedCount}  overlay={ds.snapshot.deltas.Length}  build={ds.buildMillis} ms  seed={ds.snapshot.worldSeed}  densityVersion={ds.snapshot.densityVersion}");
             if (ds.Count == 0) { sb.AppendLine("(no people — nothing built yet, or the world has no source population)"); return sb.ToString(); }
 
             foreach (Dimension d in new[] { Dimension.Sex, Dimension.AgeBucket, Dimension.Education, Dimension.Class, Dimension.WorkStatus, Dimension.Sector, Dimension.Xenotype, Dimension.Faction, Dimension.Ideoligion, Dimension.HouseholdSize, Dimension.Linked })

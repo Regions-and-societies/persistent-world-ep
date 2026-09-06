@@ -90,17 +90,16 @@ namespace RegionsAndSocieties.PersistentWorld.Population
 
         public static readonly HouseholdTable Empty = new HouseholdTable(Array.Empty<TileSlot>(), new int[1], Array.Empty<int>());
 
-        /// <summary>Lay out every tile's households. O(households).</summary>
-        public static HouseholdTable Build(PopulationSnapshot snapshot)
+        /// <summary>Lay out every home tile's households over its residents. O(households).</summary>
+        public static HouseholdTable Build(int worldSeed, TileSlot[] tiles)
         {
-            snapshot = snapshot ?? PopulationSnapshot.Empty();
-            TileSlot[] tiles = snapshot.tiles;
+            tiles = tiles ?? Array.Empty<TileSlot>();
             var tileFirst = new int[tiles.Length + 1];
             var all = new System.Collections.Generic.List<int>();
             for (int t = 0; t < tiles.Length; t++)
             {
                 tileFirst[t] = all.Count;
-                int[] sizes = HouseholdRules.Sizes(snapshot.worldSeed, tiles[t].tile, tiles[t].population);
+                int[] sizes = HouseholdRules.Sizes(worldSeed, tiles[t].tile, tiles[t].population);
                 int at = 0;
                 for (int h = 0; h < sizes.Length; h++) { all.Add(at); at += sizes[h]; }
             }
