@@ -88,6 +88,7 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
             int seed = Find.World?.info?.Seed ?? 0;
             db = new CensusDatabase(worldId, seed);
             if (!db.Open()) { db = null; workingId = null; return; }
+            VocabularySync.Run(db, catalogue);
 
             int tick = Find.TickManager?.TicksGame ?? 0;
             db.Run("lineage open", c =>
@@ -116,6 +117,8 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
                     workingId = store.Open(null, tick);   // a new world, or a save from before the database
                     if (overlay.Count > 0) store.UpsertAll(workingId, overlay.Records());
                 }
+                // Every link made this session is an event in the history: a real pawn became this person.
+                overlay.OnStored = d => db?.Run("delta write", cc => new LineageStore(cc).Upsert(workingId, in d));
                 store.ObserveFiles(CensusDatabase.SavedGameNames(), DateTime.UtcNow);
                 int dropped = store.Collect(workingId, DateTime.UtcNow, MissingGrace);
                 if (dropped > 0) Log.Message($"[R&S PersistentWorld] Collected {dropped} orphaned save lineage(s).");

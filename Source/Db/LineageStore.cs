@@ -282,6 +282,7 @@ namespace RegionsAndSocieties.PersistentWorld.Db
                 {
                     foreach (string id in doomed)
                     {
+                        HistoryStore.DropSave(c, tx, id);   // its years, flows and person events go with it
                         using (SqliteCommand cmd = c.CreateCommand())
                         {
                             cmd.Transaction = tx;

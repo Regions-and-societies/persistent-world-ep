@@ -43,9 +43,12 @@ namespace RegionsAndSocieties.PersistentWorld.UI
             sb.AppendLine($"commits: working={comp.WorkingCommit} saved={comp.SavedCommit} parent={comp.ParentCommit}  overlay in memory={comp.Overlay.Count}");
             db.Run("status", c =>
             {
-                foreach (string t in new[] { "commits", "deltas", "builds", "people", "households", "links", "tiles" })
+                foreach (string t in new[] { "commits", "deltas", "builds", "people", "households", "links", "tiles", "factors", "factor_edges", "sectors", "cohort_kinds", "region_years", "cohort_years", "factor_levels", "flows", "births_assigned", "settlement_years", "person_events" })
                     sb.Append("  ").Append(t).Append('=').Append(Db.CensusStore.Count(c, t));
                 sb.AppendLine();
+                sb.AppendLine($"  schema v{Db.CensusSchema.CurrentVersion(c)}  model: {Db.CensusSchema.Get(c, null, "model_version")}");
+                var counts = new Db.HistoryStore(c).EventCounts(comp.WorkingCommit);
+                if (counts.Count > 0) { sb.Append("  events along this lineage:"); foreach (var kv in counts) sb.Append(' ').Append(kv.Key).Append('=').Append(kv.Value); sb.AppendLine(); }
                 sb.AppendLine("  lineage:");
                 foreach (Db.CommitInfo ci in new Db.LineageStore(c).All())
                     sb.AppendLine($"    {ci.saveId}  parent={ci.parentId ?? "-"}  file={(ci.fileName ?? "-")}  tick={ci.tick}  deltas={ci.deltaCount}  {(ci.sealed_ ? "sealed" : "working")}{(ci.superseded ? " superseded" : "")}{(ci.missingSince != null ? " missing since " + ci.missingSince : "")}{(ci.saveId == comp.WorkingCommit ? "  <- current" : "")}");

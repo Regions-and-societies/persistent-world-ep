@@ -171,9 +171,16 @@ run_suite identity Exe \
 
 # 0.1.0 database (#17-#20): schema, the save lineage (chain, branches, supersede, collect), census tables,
 # and the SQL door — over a temp file with the stock driver bundle.
+DB_SRC="$SRC/Db/CensusSchema.cs $SRC/Db/LineageStore.cs $SRC/Db/CensusStore.cs $SRC/Db/HistoryRecords.cs $SRC/Db/HistoryStore.cs $SRC/Db/VocabularyStore.cs"
 run_suite_db db \
     Tests/DbTests.cs \
-    $POPULATION_PURE $CORE_RULES $SRC/Db/CensusSchema.cs $SRC/Db/LineageStore.cs $SRC/Db/CensusStore.cs
+    $POPULATION_PURE $CORE_RULES $DB_SRC
+
+# Schema v2 (Core's 0.4.0 demographic model): migration, the built-in vocabulary, per-year history tables,
+# person events along a lineage, and collection taking history with it.
+run_suite_db history \
+    Tests/HistoryTests.cs \
+    $POPULATION_PURE $CORE_RULES $DB_SRC
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures suite(s) failed"
