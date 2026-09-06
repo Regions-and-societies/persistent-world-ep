@@ -103,6 +103,24 @@ branched out from under you — is handled by giving every save file its own pla
   have a planet before the first fresh build lands, and open to a read‑only SQL door for consumers and
   tuning. A CSV dump remains as a debug action.
 
+### Schema v2: the tables mirror Core's locked demographic model (2026-09-06)
+
+Core's `Design/DEMOGRAPHIC_MODEL.md` (0.4.0 keystone, topology locked) is the spec the history tables
+follow: **xenotype cohorts are the unit, the region is a population‑weighted aggregate, the influence
+graph steps once per demographic year, and every axis is tracked per cohort.** Core simulates that
+model and emits the numbers; this EP records them and resolves them into people.
+
+| Group | Tables | What they hold |
+|---|---|---|
+| Vocabulary | `factors`, `factor_tiers`, `factor_edges`, `sectors`, `cohort_kinds` | The influence graph (Stock / Flow / Mutable / Context / Derived, Scalar or Distribution, hysteresis constants, weighted edges with Linear / Saturating / Threshold curves and Stress / Ceiling / Suppress modes), the economic sector tree with labour tiers, and each xenotype's gene‑derived constants (inheritable, lifespan, drug dependency, fragility, fertility). Seeded from Core's templates, overwritten by a reflection‑guarded sync from Core's Defs once they ship; a patch's factor needs no migration. |
+| Lineage | `commits`, `deltas` | One diff per save file (see above). `deltas` also carries strata, enslaved, partner, education and class so a branch can change more than home and death. |
+| History | `region_years`, `cohort_years`, `factor_levels`, `flows`, `births_assigned`, `settlement_years`, `person_events` | Per demographic year: the region's shared stage, geo read (area, food capacity, carrying capacity, density) and aggregates; every per‑cohort axis and mechanism output (standing, slavery share, fight/flight, income / cost of living / assets, education and strata and class distributions, sex and gender, healthcare, housing, contentment, substance use, crime, the seven cause‑specific mortality hazards, life expectancy, infant mortality, leading cause, dependency); any factor's current/target in long format; births, deaths by cause, migration, combat, enslavement; which cohort the children of two cohorts join; what each settlement presented to its region; and **what happened to whom** — the person events (born, died, moved, enslaved, freed, partnered, separated, schooled, class, employed, unemployed, converted, linked). Every row carries the `save_id` it was written under, so a save's history is the union along its lineage and a collected commit takes its rows with it. |
+| Census | `builds`, `people`, `households`, `links`, `labels`, `regions`, `tiles` | The latest materialized planet. `people` gained the model's per‑person mutable state: strata, enslaved, partner, parents, birth and death years, cause of death, income, cost of living, assets, contentment, substance use, healthcare. |
+
+The write path into the history is the 0.3.0 work (#12 consumes Core's deltas as per‑person changes);
+0.1.0 ships the tables, the vocabulary, the event API (`RecordEvent`, `HistoryOf`), and `MovePerson`
+recording its own event. The demographic year is one in‑game year (sixty days).
+
 ---
 
 ## Query surface

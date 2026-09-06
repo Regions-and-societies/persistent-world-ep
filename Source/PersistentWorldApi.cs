@@ -123,11 +123,15 @@ namespace RegionsAndSocieties.PersistentWorld
         /// <summary>Change where a person lives (main thread). Takes effect in the next build; the change is
         /// persisted in the overlay (#9). Returns false if the person is unknown to the current dataset.
         /// This is the seam the 0.3.0 dynamics and consumer mods drive movement through.</summary>
-        public static bool MovePerson(long id, int homeTile)
+        public static bool MovePerson(long id, int homeTile, string cause = null)
         {
             var comp = PersistentWorldComponent.Instance;
             if (comp == null || !Dataset.TryGetById(id, out Individual p)) return false;
-            if (comp.Overlay.Move(id, p.birthTile, p.birthIndex, homeTile)) comp.RequestRebuild();
+            if (comp.Overlay.Move(id, p.birthTile, p.birthIndex, homeTile))
+            {
+                RecordEvent(id, Db.EventKind.Moved, p.tile, homeTile, cause);
+                comp.RequestRebuild();
+            }
             return true;
         }
 
@@ -144,6 +148,32 @@ namespace RegionsAndSocieties.PersistentWorld
             if (db == null || string.IsNullOrEmpty(sql)) return new List<Dictionary<string, object>>();
             return db.Run("query", c => Db.CensusStore.Query(c, sql, limit), new List<Dictionary<string, object>>());
         }
+
+        /// <summary>A person's history along the current save's lineage, oldest first (main-thread-agnostic).
+        /// Empty without a database.</summary>
+        public static List<Db.PersonEvent> HistoryOf(long id)
+        {
+            var comp = PersistentWorldComponent.Instance;
+            var db = comp?.Database;
+            if (db == null) return new List<Db.PersonEvent>();
+            return db.Run("history read", c => new Db.HistoryStore(c).EventsOf(id, comp.WorkingCommit), new List<Db.PersonEvent>());
+        }
+
+        /// <summary>Record something that happened to a person under the current save (main thread). This is
+        /// the write seam the 0.3.0 dynamics and consumer mods use; returns false without a database.</summary>
+        public static bool RecordEvent(long id, string kind, long fromValue, long toValue, string cause = null)
+        {
+            var comp = PersistentWorldComponent.Instance;
+            var db = comp?.Database;
+            if (db == null || comp.WorkingCommit == null || string.IsNullOrEmpty(kind)) return false;
+            int tick = Verse.Find.TickManager?.TicksGame ?? 0;
+            var e = new Db.PersonEvent { year = DemographicYear(tick), tick = tick, person = id, kind = kind, fromValue = fromValue, toValue = toValue, cause = cause,
+                region = Dataset.TryGetById(id, out Individual p) ? Dataset.RegionOf(in p) : -1 };
+            return db.Run("event write", c => { new Db.HistoryStore(c).Append(comp.WorkingCommit, in e); return true; }, false);
+        }
+
+        /// <summary>The demographic year of a tick: the model steps once per in-game year (60 days).</summary>
+        public static int DemographicYear(int tick) => tick / 3600000;
 
         /// <summary>Ask the loop for a fresh build at the next tick (main thread). No-op without a world.</summary>
         public static void RequestRebuild() => PersistentWorldComponent.Request();
