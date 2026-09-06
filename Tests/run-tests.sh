@@ -83,6 +83,36 @@ run_suite() {
     if [ "$kind" = Exe ] && ! dotnet "$proj/bin/$name.dll"; then failures=$((failures + 1)); fi
 }
 
+# run_suite_db <name> <files...> — as run_suite Exe, plus the SQLite driver package (with its stock native
+# bundle) for suites over Source/Db. Needs the dotnet path: mcs has no package restore, so it is skipped there.
+run_suite_db() {
+    name=$1; shift 1
+    if [ "$COMPILER" = mcs ]; then echo "SKIPPED (needs dotnet for packages): $name"; return; fi
+    proj="$OUT/$name"; rm -rf "$proj"; mkdir -p "$proj"
+    {
+        echo '<Project Sdk="Microsoft.NET.Sdk">'
+        echo "  <PropertyGroup>"
+        echo "    <OutputType>Exe</OutputType>"
+        echo "    <TargetFramework>net8.0</TargetFramework>"
+        echo "    <Nullable>disable</Nullable>"
+        echo "    <LangVersion>latest</LangVersion>"
+        echo "    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>"
+        echo "    <NoWarn>0169;0414;0649;0219;0067</NoWarn>"
+        echo "    <AssemblyName>$name</AssemblyName>"
+        echo "  </PropertyGroup>"
+        echo "  <ItemGroup>"
+        echo '    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />'
+        for f in "$@"; do echo "    <Compile Include=\"$(winpath "$PWD/$f")\" />"; done
+        echo "  </ItemGroup>"
+        echo '</Project>'
+    } > "$proj/$name.csproj"
+
+    if ! dotnet build "$proj/$name.csproj" -v q --nologo -c Release -o "$proj/bin" > "$proj/build.log" 2>&1; then
+        echo "BUILD FAILED: $name"; tail -12 "$proj/build.log"; failures=$((failures + 1)); return
+    fi
+    if ! dotnet "$proj/bin/$name.dll"; then failures=$((failures + 1)); fi
+}
+
 # 0.1.0 scaffold (#1): the Core-presence rule the whole EP gates on. Pure, no game.
 run_suite corepresence Exe \
     Tests/RimWorldStubs.cs Tests/CorePresenceTests.cs \
@@ -138,6 +168,12 @@ run_suite households Exe \
 run_suite identity Exe \
     Tests/IdentityTests.cs \
     $POPULATION_PURE $CORE_RULES
+
+# 0.1.0 database (#17-#20): schema, the save lineage (chain, branches, supersede, collect), census tables,
+# and the SQL door — over a temp file with the stock driver bundle.
+run_suite_db db \
+    Tests/DbTests.cs \
+    $POPULATION_PURE $CORE_RULES $SRC/Db/CensusSchema.cs $SRC/Db/LineageStore.cs $SRC/Db/CensusStore.cs
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures suite(s) failed"

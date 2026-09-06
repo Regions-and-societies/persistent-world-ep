@@ -131,6 +131,20 @@ namespace RegionsAndSocieties.PersistentWorld
             return true;
         }
 
+        /// <summary>True when the world's SQLite database is open (#17). False means in-memory only.</summary>
+        public static bool DatabaseAvailable => PersistentWorldComponent.Instance?.Database?.Ready == true;
+
+        /// <summary>The SQL door (#20): one read-only SELECT over the census tables (people, households, links,
+        /// labels, regions, tiles, builds) and the lineage (commits, deltas). Rows come back as column → value
+        /// maps, at most <paramref name="limit"/> (0 = all). Empty when there is no database or the statement
+        /// fails; writes are refused. Safe from any thread.</summary>
+        public static List<Dictionary<string, object>> Query(string sql, int limit = 1000)
+        {
+            var db = PersistentWorldComponent.Instance?.Database;
+            if (db == null || string.IsNullOrEmpty(sql)) return new List<Dictionary<string, object>>();
+            return db.Run("query", c => Db.CensusStore.Query(c, sql, limit), new List<Dictionary<string, object>>());
+        }
+
         /// <summary>Ask the loop for a fresh build at the next tick (main thread). No-op without a world.</summary>
         public static void RequestRebuild() => PersistentWorldComponent.Request();
 

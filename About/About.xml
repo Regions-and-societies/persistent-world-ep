@@ -26,7 +26,9 @@
 
 An expansion pack for Regions and Societies. Gives the planet a full, queryable population — every person, not just per-region aggregates — built off the game loop on a background thread and swapped in atomically, so it never hitches even at 100k+ people.
 
-Every individual is derived deterministically from the world seed and the region's demographics (age, sex, xenotype, education, occupation, socioeconomic tier), grouped into households sized by the region's residence model, and indexed for counts and breakdowns that other mods, overlays, and a dev-mode debug dump can query. Existing world pawns are linked to their slot in the population. A per-save JSON/CSV sidecar is written as a rebuildable cache for external tools; the save itself stays tiny.
+Every individual is derived deterministically from the world seed and the region's demographics (age, sex, xenotype, education, occupation, socioeconomic tier), carries an identity that survives relocation, is grouped into households sized by the region's residence model, and is indexed for counts and breakdowns that other mods, overlays, and a dev-mode debug dump can query. Existing world pawns are linked to their person in the census.
+
+What changes over time is kept in a per-world SQLite database that ships inside the mod and needs no setup: every save file gets its own diff, so autosaves and branched saves never overwrite each other, deleted saves are cleaned up, and the full census is there for a read-only SQL query or a CSV dump. The save itself stays tiny.
 
 Requires: Regions and Societies (either the standard or the Realistic Planets 2 edition). No settings of its own.
     </description>

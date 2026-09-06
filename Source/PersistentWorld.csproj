@@ -11,7 +11,23 @@
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <OutputPath>..\Assemblies\</OutputPath>
         <DebugType>none</DebugType>
+        <!-- Managed dependencies (SQLite driver + its netstandard shims) are copied next to the mod
+             assembly so RimWorld loads them from Assemblies/. Native SQLite goes to ..\Natives\ (below);
+             it must NOT land in Assemblies/, where the game would try to load it as managed code. -->
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+        <SqliteNativeVersion>2.1.10</SqliteNativeVersion>
     </PropertyGroup>
+
+    <ItemGroup>
+        <!-- The SQLite driver, without the "batteries" bundle: the bundle's own initializer looks for the
+             native next to the managed assembly's location, which RimWorld's byte-loading leaves empty. The
+             mod registers the provider itself (see Integration/SqliteRuntime) from the Natives folder. -->
+        <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.0" />
+        <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="2.1.10" />
+        <!-- Only for its native binaries; nothing of it is referenced or copied by the SDK. -->
+        <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="$(SqliteNativeVersion)" ExcludeAssets="all" GeneratePathProperty="true" />
+    </ItemGroup>
 
     <ItemGroup>
         <Reference Include="Assembly-CSharp">
@@ -39,5 +55,26 @@
             <Private>false</Private>
         </Reference>
     </ItemGroup>
+
+    <!-- Native SQLite for every platform RimWorld ships on, laid out as Natives/<rid>/<library>, copied
+         from the NuGet package at build time so no binary is committed. The runtime picks the folder for
+         the running OS and architecture. -->
+    <Target Name="CopySqliteNatives" AfterTargets="Build">
+        <PropertyGroup>
+            <SqliteRuntimes>$(PkgSQLitePCLRaw_lib_e_sqlite3)\runtimes</SqliteRuntimes>
+            <NativesDir>$(MSBuildProjectDirectory)\..\Natives</NativesDir>
+        </PropertyGroup>
+        <ItemGroup>
+            <SqliteNative Include="$(SqliteRuntimes)\win-x64\native\e_sqlite3.dll" Rid="win-x64" />
+            <SqliteNative Include="$(SqliteRuntimes)\win-arm64\native\e_sqlite3.dll" Rid="win-arm64" />
+            <SqliteNative Include="$(SqliteRuntimes)\linux-x64\native\libe_sqlite3.so" Rid="linux-x64" />
+            <SqliteNative Include="$(SqliteRuntimes)\linux-arm64\native\libe_sqlite3.so" Rid="linux-arm64" />
+            <SqliteNative Include="$(SqliteRuntimes)\osx-x64\native\libe_sqlite3.dylib" Rid="osx-x64" />
+            <SqliteNative Include="$(SqliteRuntimes)\osx-arm64\native\libe_sqlite3.dylib" Rid="osx-arm64" />
+        </ItemGroup>
+        <Copy SourceFiles="@(SqliteNative)" DestinationFiles="@(SqliteNative->'$(NativesDir)\%(Rid)\%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+        <!-- The SDK still drops the win natives under Assemblies/runtimes; the game must not see them. -->
+        <RemoveDir Directories="$(OutDir)runtimes" />
+    </Target>
 
 </Project>
