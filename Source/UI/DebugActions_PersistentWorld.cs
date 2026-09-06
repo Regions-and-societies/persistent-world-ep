@@ -30,6 +30,50 @@ namespace RegionsAndSocieties.PersistentWorld.UI
             Log.Message(Report(ds));
         }
 
+        [DebugAction(Category, "R&S PW: database status", actionType = DebugActionType.Action, allowedGameStates = AllowedGameStates.Entry | AllowedGameStates.PlayingOnMap | AllowedGameStates.PlayingOnWorld)]
+        private static void DatabaseStatus()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("--- R&S PW: database status (#17-#19) ---");
+            sb.AppendLine($"SQLite runtime: {(SqliteRuntime.Available ? "loaded " + SqliteRuntime.Version + " from " + SqliteRuntime.LoadedFrom : "unavailable (" + SqliteRuntime.Error + ")")}");
+            var comp = PersistentWorldComponent.Instance;
+            var db = comp?.Database;
+            if (db == null) { sb.AppendLine("no world database open"); Log.Message(sb.ToString()); return; }
+            sb.AppendLine($"database: {db.path}  world={db.worldId} seed={db.worldSeed}  writing={db.IsWriting}");
+            sb.AppendLine($"commits: working={comp.WorkingCommit} saved={comp.SavedCommit} parent={comp.ParentCommit}  overlay in memory={comp.Overlay.Count}");
+            db.Run("status", c =>
+            {
+                foreach (string t in new[] { "commits", "deltas", "builds", "people", "households", "links", "tiles" })
+                    sb.Append("  ").Append(t).Append('=').Append(Db.CensusStore.Count(c, t));
+                sb.AppendLine();
+                sb.AppendLine("  lineage:");
+                foreach (Db.CommitInfo ci in new Db.LineageStore(c).All())
+                    sb.AppendLine($"    {ci.saveId}  parent={ci.parentId ?? "-"}  file={(ci.fileName ?? "-")}  tick={ci.tick}  deltas={ci.deltaCount}  {(ci.sealed_ ? "sealed" : "working")}{(ci.superseded ? " superseded" : "")}{(ci.missingSince != null ? " missing since " + ci.missingSince : "")}{(ci.saveId == comp.WorkingCommit ? "  <- current" : "")}");
+            });
+            Log.Message(sb.ToString());
+        }
+
+        [DebugAction(Category, "R&S PW: collect orphaned lineages", actionType = DebugActionType.Action, allowedGameStates = AllowedGameStates.PlayingOnMap | AllowedGameStates.PlayingOnWorld)]
+        private static void CollectLineages()
+        {
+            var comp = PersistentWorldComponent.Instance;
+            if (comp?.Database == null) { Log.Message("[R&S PersistentWorld] No database."); return; }
+            comp.Database.Run("collect", c =>
+            {
+                var store = new Db.LineageStore(c);
+                store.ObserveFiles(CensusDatabase.SavedGameNames(), System.DateTime.UtcNow);
+                int n = store.Collect(comp.WorkingCommit, System.DateTime.UtcNow, PersistentWorldComponent.MissingGrace);
+                Log.Message($"[R&S PersistentWorld] Collected {n} orphaned commit(s). Commits whose file has been missing under {PersistentWorldComponent.MissingGrace.TotalDays} days are kept.");
+            });
+        }
+
+        [DebugAction(Category, "R&S PW: export CSV", actionType = DebugActionType.Action, allowedGameStates = AllowedGameStates.PlayingOnMap | AllowedGameStates.PlayingOnWorld)]
+        private static void ExportCsv()
+        {
+            string p = PopulationSidecar.WriteCsv(PersistentWorldApi.Dataset);
+            Log.Message(p == null ? "[R&S PersistentWorld] CSV export failed." : "[R&S PersistentWorld] Wrote " + p);
+        }
+
         [DebugAction(Category, "R&S PW: linked world pawns", actionType = DebugActionType.Action, allowedGameStates = AllowedGameStates.PlayingOnMap | AllowedGameStates.PlayingOnWorld)]
         private static void LinkedPawns()
         {

@@ -75,22 +75,33 @@ carries genuine state.
 
 ---
 
-## Storage: two per‑save faces, one source of truth
+## Storage: a SQLite database per world, with a lineage of saves (revised 2026-09-06)
 
-Each save needs its own data. It splits into two, and only one must be managed:
+The original plan kept the overlay inside the `.rws` and treated files as caches. The user's call for
+0.1.0 is the reverse: **the database is the source of truth**, and the `.rws` carries a pointer plus a
+recovery copy. The hazard that motivated the original plan — RimWorld saves are copied, renamed, and
+branched out from under you — is handled by giving every save file its own place in a tree.
 
-- **Authoritative persistence rides *inside* the `.rws`.** The sparse tracked‑individuals overlay is a
-  scribed `WorldComponent` in this EP, so it travels with the save automatically — rename, copy,
-  cloud‑sync, move between machines, and its tracked people come along. Tiny. No sidecar to keep in
-  sync.
-- **The CSV/JSON is a per‑save *derived export* (a rebuildable cache), not the source of truth.** It is
-  the full materialized view (derived majority + scribed overlay), written as a sidecar keyed to the
-  save (a stable game id), regenerated on the cadence and on load. A missing or stale file is a
-  non‑event: the worker rebuilds it.
-
-**Gotcha — never make the sidecar authoritative.** RimWorld saves are renamed, copied, and deleted
-out from under you; a file that *is* the data desyncs the moment a save is copied. Truth in the
-`.rws`, file as cache, sidesteps all of it.
+- **One database per world**: `Saves/PersistentWorld/census_<worldId>.db`, keyed by the world's
+  persistent random value, so it follows the world through every save of it. SQLite ships inside the
+  mod and self‑loads from `Natives/<rid>/`; the user installs nothing. If it cannot load, the mod runs
+  in memory and the `.rws` copy carries the state — nothing is lost, only the analysis store.
+- **A lineage of commits.** Every save file is a commit holding only what changed since its parent.
+  Play writes into a *working* commit under the loaded save; saving seals it under the file's name and
+  opens a child. An autosave, a manual save, and a branch the player loads from an older save each
+  carry exactly their own diff and none can trample another. Loading resolves the effective overlay by
+  walking the ancestry, nearest record wins; a tombstone record undoes an ancestor's.
+- **Recovery.** The `.rws` keeps the world id, its commit id, its parent's id, and the packed overlay.
+  If the database has no commit for the save (moved machine, deleted database, file from a backup),
+  the packed copy seeds a root commit. The database wins whenever it has the commit.
+- **Cleanup.** A save overwritten in game supersedes its old commit; a save deleted in the game's
+  dialog is dropped at once; a save file that simply went missing is dropped after a grace period.
+  A commit is never dropped while a surviving save's lineage passes through it, and a dead chain
+  unwinds from its tip. Compaction of long chains is future work.
+- **The census tables** hold the latest materialized planet (people, households, links, labels,
+  regions, tiles, builds), replaced per build on the background thread, read back on load so queries
+  have a planet before the first fresh build lands, and open to a read‑only SQL door for consumers and
+  tuning. A CSV dump remains as a debug action.
 
 ---
 
@@ -206,10 +217,9 @@ education‑ and sector‑conditional attraction.
 already drawn (education given sex and age, class given education, partner's xenotype given own). The
 tables are the tuning knobs; the CSV and the crosstab dump are how a knob's effect is read.
 
-**On SQLite.** The in‑memory index already gives the SQL‑shaped operation this needs — apply a
-calculation to every person matching a filter — in milliseconds at 100k people, with the save as the
-persistence. A SQLite‑backed store can sit behind the same overlay interface later for the full
-grand‑vision analysis; it is not on the in‑game path.
+**On SQLite.** Adopted in 0.1.0 as the authoritative store and the analysis engine (see *Storage*). The
+in‑memory index stays the per‑tick hot path — the database is never read on the game loop — and the
+SQL door is how consumers and the tuning loop ask the grand‑vision questions.
 
 **Milestones.** `0.1.0 Deterministic Census` (the baseline, with pawn‑bound identity), `0.2.0 Conditional
 Model` (lookup tables, relationships), `0.3.0 Demographic History` (consume Core deltas, migration,

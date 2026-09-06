@@ -32,10 +32,12 @@ snapshot the tests feed in.
 | `ExportTests` | the sidecar: JSON round-trips person for person with tiles, regions, labels and links; CSV shape; untrusted input (wrong schema, torn, mismatched) reads as null; safe file names; a restored dataset is adopted only before the first build |
 | `HouseholdTests` | households: sizes sum to the tile, stay 1..7, number Core's residences, are deterministic and vary by tile; hamlets big, cities small; every person in exactly one contiguous run; heads are the oldest adult; index, filters and export see household size |
 | `IdentityTests` | pawn-bound identity: ids are stable, unique over 200k, opaque and hex round-trippable; the overlay stores state not history, packs exactly, drops identity records; a moved person is found by id under the new home with birth attributes intact, a dead person is gone, a stale delta is ignored; links move their people and come home; ids survive the export |
+| `DbTests` | the database: schema creates and re-ensures; the save lineage resolves nearest-record-wins along a chain, honours tombstones, keeps branches apart, supersedes on overwrite, observes missing files and collects only what nothing can load; census tables round-trip a dataset; the SQL door reads and refuses writes. Runs over a temp file with the stock driver bundle, dotnet only |
 
 Not covered, and not pretended to be: anything that needs a live world. Save/load round trips, the
-background rebuild cadence, and whether Core's reflection targets still resolve are in-game checks
-via the dev-mode debug dump.
+background rebuild cadence, the mod's own native SQLite loader (the suites use the driver's stock
+bundle), the save-dialog hooks, and whether Core's reflection targets still resolve are in-game checks
+via the dev-mode actions (population dump, database status).
 
 ## Layout note
 

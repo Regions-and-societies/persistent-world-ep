@@ -55,7 +55,7 @@ namespace IdentityTests
             foreach (PersonDelta d in many.Records()) same &= loaded.TryGet(d.id, out PersonDelta e) && e.birthTile == d.birthTile && e.birthIndex == d.birthIndex && e.homeTile == d.homeTile && e.flags == d.flags;
             Check("every record round-trips", same);
             Check("records come out sorted by id", Sorted(many.Records()));
-            Check("a torn buffer loads nothing", new PopulationOverlay().Load(new byte[bytes.Length - 1]) == 0 && new PopulationOverlay().Load(null) == 0 && new PopulationOverlay().Load(Array.Empty<byte>()) == 0);
+            Check("a torn buffer loads nothing", new PopulationOverlay().Load(new byte[bytes.Length - 1]) == 0 && new PopulationOverlay().Load((byte[])null) == 0 && new PopulationOverlay().Load((PersonDelta[])null) == 0 && new PopulationOverlay().Load(Array.Empty<byte>()) == 0);
 
             Section("the build honours the overlay");
             RegionProfile[] profiles = { new RegionProfile { femaleFraction = 0.5f, ageShares = new[] { 0.2f, 0.6f, 0.2f }, raceKeys = new[] { 0 }, raceWeights = new[] { 1f } } };

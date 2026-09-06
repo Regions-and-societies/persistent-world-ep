@@ -34,6 +34,11 @@ namespace RegionsAndSocieties.PersistentWorld.Population
     {
         private readonly Dictionary<long, PersonDelta> byId = new Dictionary<long, PersonDelta>();
 
+        /// <summary>Write-through hooks (#18): raised after a record is stored, and after a person returns to
+        /// birth state (their record dropped). The database's working commit listens; null by default.</summary>
+        public Action<PersonDelta> OnStored;
+        public Action<PersonDelta> OnDropped;
+
         public int Count => byId.Count;
 
         public bool TryGet(long id, out PersonDelta delta) => byId.TryGetValue(id, out delta);
@@ -45,8 +50,15 @@ namespace RegionsAndSocieties.PersistentWorld.Population
         public void Set(PersonDelta delta)
         {
             if (delta.id == 0) return;
-            if (delta.IsIdentity) byId.Remove(delta.id);
-            else byId[delta.id] = delta;
+            if (delta.IsIdentity)
+            {
+                if (byId.Remove(delta.id)) OnDropped?.Invoke(delta);
+            }
+            else
+            {
+                byId[delta.id] = delta;
+                OnStored?.Invoke(delta);
+            }
         }
 
         /// <summary>Move a person. Returns true when their home actually changed.</summary>
@@ -68,11 +80,20 @@ namespace RegionsAndSocieties.PersistentWorld.Population
             if (!byId.TryGetValue(id, out PersonDelta d))
                 d = new PersonDelta { id = id, birthTile = birthTile, birthIndex = birthIndex, homeTile = birthTile };
             d.flags |= PersonDelta.FlagDead;
-            byId[id] = d;
+            Set(d);
         }
 
-        public bool Remove(long id) => byId.Remove(id);
+        /// <summary>Forget a person's record (back to birth state). Returns true if there was one.</summary>
+        public bool Remove(long id)
+        {
+            if (!byId.TryGetValue(id, out PersonDelta d)) return false;
+            byId.Remove(id);
+            d.homeTile = d.birthTile; d.flags = 0;
+            OnDropped?.Invoke(d);
+            return true;
+        }
 
+        /// <summary>Drop everything without raising hooks (a reload, not a change).</summary>
         public void Clear() => byId.Clear();
 
         /// <summary>Every record, sorted by id — the immutable copy a snapshot carries.</summary>
@@ -99,6 +120,16 @@ namespace RegionsAndSocieties.PersistentWorld.Population
                 bytes[o++] = d.flags;
             }
             return bytes;
+        }
+
+        /// <summary>Replace the table from resolved records (the database's answer for a save). No hooks are
+        /// raised: this is a reload, not a change. Returns the number of records loaded.</summary>
+        public int Load(IEnumerable<PersonDelta> records)
+        {
+            byId.Clear();
+            if (records == null) return 0;
+            foreach (PersonDelta d in records) if (d.id != 0 && !d.IsIdentity) byId[d.id] = d;
+            return byId.Count;
         }
 
         /// <summary>Replace the table from <see cref="ToBytes"/> output. A null, empty, or malformed

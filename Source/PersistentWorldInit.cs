@@ -19,11 +19,16 @@ namespace RegionsAndSocieties.PersistentWorld
         /// <summary>Decided once at startup; the active mod list does not change during a session.</summary>
         public static readonly bool Enabled;
 
+        /// <summary>True when the SQLite runtime loaded (#17). False means "no database": the census still
+        /// runs in memory and the save keeps its packed overlay copy.</summary>
+        public static bool DatabaseAvailable => SqliteRuntime.Available;
+
         static PersistentWorldInit()
         {
             new Harmony(HarmonyId).PatchAll(Assembly.GetExecutingAssembly());
             Enabled = CorePresent();
             if (!Enabled) Log.Warning(CorePresence.AbsentWarning);
+            else SqliteRuntime.Initialize(SqliteRuntime.ModRoot());
         }
 
         /// <summary>True when either R&amp;S edition is active. Uses ModLister only — never touches an R&amp;S

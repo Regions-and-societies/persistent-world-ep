@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using RegionsAndSocieties.PersistentWorld.Db;
 using RegionsAndSocieties.PersistentWorld.Population;
 using RimWorld.Planet;
 using Verse;
@@ -8,34 +9,47 @@ using Verse;
 namespace RegionsAndSocieties.PersistentWorld.Integration
 {
     /// <summary>
-    /// The game-side owner of the materialization loop (#3). Ticks the cadence, takes the snapshot on the
-    /// main thread, hands it to the background build, polls for completion and publishes the swap.
-    /// RimWorld instantiates every <see cref="WorldComponent"/> in a loaded assembly, so this exists even
-    /// without a Core edition — in which case it does nothing: every R&amp;S-typed call sits behind
-    /// <see cref="PersistentWorldInit.Enabled"/> in its own method, so the JIT never touches a missing type.
+    /// The game-side owner of the materialization loop (#3) and of the world's database (#17–#20). Ticks
+    /// the cadence, takes the snapshot on the main thread, hands it to the background build, polls for
+    /// completion and publishes the swap. RimWorld instantiates every <see cref="WorldComponent"/> in a
+    /// loaded assembly, so this exists even without a Core edition — in which case it does nothing: every
+    /// R&amp;S-typed call sits behind <see cref="PersistentWorldInit.Enabled"/> in its own method.
     ///
-    /// <para>The only authoritative per-person state lives here and travels inside the .rws: the sparse
-    /// overlay (#9, packed bytes) and the world-pawn link table (#4).</para>
+    /// <para><b>State.</b> The database is the source of truth for per-person state, as a lineage of
+    /// commits — one per save file, each holding only what changed since its parent. The .rws carries the
+    /// world id, this save's commit id and its parent's, plus a packed copy of the overlay as a recovery
+    /// seed for when the database has no commit for the save (moved machine, deleted database). The
+    /// database wins whenever it has the commit.</para>
     /// </summary>
     public class PersistentWorldComponent : WorldComponent
     {
         /// <summary>Rebuild cadence: every two in-game days (60000 ticks per day).</summary>
         public const int CadenceTicks = 120000;
 
+        /// <summary>How long a save file may be missing before its commit is collected (#19).</summary>
+        public static readonly TimeSpan MissingGrace = TimeSpan.FromDays(7);
+
         private readonly MaterializationLoop loop = new MaterializationLoop();
         private readonly PopulationCatalogue catalogue = new PopulationCatalogue();
         private readonly WorldPawnLinks links = new WorldPawnLinks();
         private readonly PopulationOverlay overlay = new PopulationOverlay();
-        private List<WorldPawnLinkRecord> linkRecords;   // scribe buffer for <see cref="links"/>
-        private string overlayBlob;                       // scribe buffer for <see cref="overlay"/> (base64)
+        private CensusDatabase db;
+        private string workingId;                         // the commit play writes into; becomes the save id on save
+        private string savedId;                           // scribed: this save's commit
+        private string parentId;                          // scribed: the commit this save was loaded from
+        private string worldIdScribed;                    // scribed: guards against a database of another world
+        private List<WorldPawnLinkRecord> linkRecords;    // scribe buffer for <see cref="links"/>
+        private string overlayBlob;                       // scribe buffer for <see cref="overlay"/> (base64), the recovery copy
         private bool rebuildRequested;
         private int lastStartTick = int.MinValue;
-        private Task<PopulationDataset> restore;          // the sidecar read kicked off on load (#6)
+        private Task<PopulationDataset> restore;          // the census read kicked off on load (#20)
+        private bool loadedFromSave;
 
         public PersistentWorldComponent(World world) : base(world)
         {
-            // Every published build refreshes the sidecar; a restored one does not (it came from there).
-            loop.Swapped += ds => { if (loop.Swaps > 0) PopulationSidecar.WriteAsync(ds); };
+            loop.Swapped += ds => { if (loop.Swaps > 0) db?.WriteCensusAsync(ds, Find.TickManager?.TicksGame ?? 0); };
+            overlay.OnStored = d => db?.Run("delta write", c => new LineageStore(c).Upsert(workingId, in d));
+            overlay.OnDropped = d => db?.Run("delta clear", c => new LineageStore(c).Clear(workingId, d.id, d.birthTile, d.birthIndex));
         }
 
         /// <summary>The component of the current world, or null when no world is loaded.</summary>
@@ -44,47 +58,98 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
         /// <summary>The last completed dataset of the current world; the empty dataset when there is none.</summary>
         public static PopulationDataset Dataset => Instance?.loop.Current ?? PopulationDataset.Empty;
 
-        /// <summary>The Def ↔ key lookup the current world's snapshots were built with.</summary>
         public PopulationCatalogue Catalogue => catalogue;
-
         public MaterializationLoop Loop => loop;
-
-        /// <summary>The scribed world-pawn → person table (#4). Reconciled on every snapshot.</summary>
         public WorldPawnLinks Links => links;
-
-        /// <summary>The scribed sparse overlay (#9): every person whose state differs from birth.</summary>
         public PopulationOverlay Overlay => overlay;
+        public CensusDatabase Database => db;
+        public string WorkingCommit => workingId;
+        public string SavedCommit => savedId;
+        public string ParentCommit => parentId;
 
-        /// <summary>Ask for a rebuild at the next tick instead of waiting for the cadence (an event just
-        /// changed the population and a consumer wants a fresh dataset). Coalesces: many requests, one build.</summary>
         public void RequestRebuild() => rebuildRequested = true;
-
-        /// <summary>Static convenience for consumers holding no component reference. No-op without a world.</summary>
         public static void Request() => Instance?.RequestRebuild();
+
+        // ---------------------------------------------------------------- lifecycle
 
         public override void FinalizeInit(bool fromLoad)
         {
             base.FinalizeInit(fromLoad);
             rebuildRequested = true;   // first build as soon as the world is live
-            if (PersistentWorldInit.Enabled) BeginRestore();
+            if (!PersistentWorldInit.Enabled) return;
+            OpenDatabase(fromLoad);
+            BeginRestore();
         }
 
-        // Read last session's sidecar off the main thread so queries have a planet before the first build
+        // Kept separate so the database-typed code only JITs when Core is present.
+        private void OpenDatabase(bool fromLoad)
+        {
+            string worldId = PopulationSidecar.WorldId();
+            int seed = Find.World?.info?.Seed ?? 0;
+            db = new CensusDatabase(worldId, seed);
+            if (!db.Open()) { db = null; workingId = null; return; }
+
+            int tick = Find.TickManager?.TicksGame ?? 0;
+            db.Run("lineage open", c =>
+            {
+                var store = new LineageStore(c);
+                if (loadedFromSave && !string.IsNullOrEmpty(savedId))
+                {
+                    if (store.Exists(savedId) && worldIdScribed == worldId)
+                    {
+                        // Database wins: the save's effective overlay is its lineage.
+                        overlay.Clear();
+                        overlay.Load(store.Resolve(savedId));
+                    }
+                    else
+                    {
+                        // Recovery: the .rws copy seeds a root commit under this save's id.
+                        store.Open(null, tick, savedId);
+                        store.UpsertAll(savedId, overlay.Records());
+                        store.Seal(savedId, SaveLineageHooks.LoadedFileName ?? "recovered", tick);
+                        Log.Message($"[R&S PersistentWorld] No lineage for this save in the database; seeded it from the save's own overlay ({overlay.Count} records).");
+                    }
+                    workingId = store.Open(savedId, tick);
+                }
+                else
+                {
+                    workingId = store.Open(null, tick);   // a new world, or a save from before the database
+                    if (overlay.Count > 0) store.UpsertAll(workingId, overlay.Records());
+                }
+                store.ObserveFiles(CensusDatabase.SavedGameNames(), DateTime.UtcNow);
+                int dropped = store.Collect(workingId, DateTime.UtcNow, MissingGrace);
+                if (dropped > 0) Log.Message($"[R&S PersistentWorld] Collected {dropped} orphaned save lineage(s).");
+            });
+        }
+
+        // Read the stored census off the main thread so queries have a planet before the first build
         // finishes. It is only ever adopted while nothing has been built (MaterializationLoop.Restore).
         private void BeginRestore()
         {
-            string path = PopulationSidecar.JsonPath();
-            int seed = Find.World?.info?.Seed ?? 0;
-            if (path == null) return;
-            restore = Task.Run(() => PopulationSidecar.TryRead(path, seed));
+            CensusDatabase d = db;
+            if (d == null) return;
+            restore = Task.Run(() => d.ReadCensus());
         }
+
+        /// <summary>The player deleted these save files in the dialog (#19): drop their lineages now.</summary>
+        public void OnSavesDeleted(List<string> fileNames)
+        {
+            db?.Run("delete cleanup", c =>
+            {
+                var store = new LineageStore(c);
+                store.MarkDeleted(fileNames);
+                int dropped = store.Collect(workingId, DateTime.UtcNow, MissingGrace);
+                if (dropped > 0) Log.Message($"[R&S PersistentWorld] Collected {dropped} lineage commit(s) of deleted saves.");
+            });
+        }
+
+        // ---------------------------------------------------------------- tick
 
         public override void WorldComponentTick()
         {
             base.WorldComponentTick();
             if (!PersistentWorldInit.Enabled) return;
 
-            // Publish a finished build first, so a rebuild started this tick never races the swap.
             loop.Poll();
 
             if (restore != null && restore.IsCompleted)
@@ -92,18 +157,17 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
                 Task<PopulationDataset> r = restore;
                 restore = null;
                 if (r.Status == TaskStatus.RanToCompletion && r.Result != null && loop.Restore(r.Result))
-                    Log.Message($"[R&S PersistentWorld] Restored {r.Result.Count:N0} people from the sidecar; a fresh build follows.");
+                    Log.Message($"[R&S PersistentWorld] Restored {r.Result.Count:N0} people from the database; a fresh build follows.");
             }
 
             int tick = Find.TickManager?.TicksGame ?? 0;
             bool due = tick - lastStartTick >= CadenceTicks;
             if (!rebuildRequested && !due) return;
-            if (loop.IsBuilding) return;   // skip; the cadence or the request fires again next tick
+            if (loop.IsBuilding) return;
 
             StartBuild(tick);
         }
 
-        // Kept separate so the R&S-typed snapshot code only JITs when Core is present and a build starts.
         private void StartBuild(int tick)
         {
             PopulationSnapshot snapshot = PopulationSnapshotBuilder.Take(catalogue, links, overlay);
@@ -128,24 +192,44 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
             return loop.Current;
         }
 
+        // ---------------------------------------------------------------- scribe
+
         public override void ExposeData()
         {
             base.ExposeData();
 
             if (Scribe.mode == LoadSaveMode.Saving)
             {
+                int tick = Find.TickManager?.TicksGame ?? 0;
+                // This save IS the working commit: seal it under the file's name, and play continues in a child.
+                if (db != null && workingId != null)
+                {
+                    string sealedId = workingId;
+                    parentId = ParentOf(sealedId);
+                    savedId = sealedId;
+                    db.Run("lineage seal", c =>
+                    {
+                        var store = new LineageStore(c);
+                        store.Seal(sealedId, SaveLineageHooks.SavingFileName ?? "unknown", tick);
+                        workingId = store.Open(sealedId, tick);
+                    });
+                }
+                worldIdScribed = PopulationSidecar.WorldId();
                 linkRecords = new List<WorldPawnLinkRecord>();
                 foreach (PawnLink link in links.Records()) linkRecords.Add(new WorldPawnLinkRecord(link));
                 byte[] packed = overlay.ToBytes();
                 overlayBlob = packed.Length == 0 ? null : Convert.ToBase64String(packed);
             }
 
-            // Three ints and a long per linked pawn; 21 packed bytes per changed person. Nothing else.
+            Scribe_Values.Look(ref worldIdScribed, "worldId");
+            Scribe_Values.Look(ref savedId, "saveId");
+            Scribe_Values.Look(ref parentId, "parentId");
             Scribe_Collections.Look(ref linkRecords, "worldPawnLinks", LookMode.Deep);
             Scribe_Values.Look(ref overlayBlob, "overlay");
 
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
             {
+                loadedFromSave = true;
                 var loaded = new List<PawnLink>();
                 if (linkRecords != null)
                     foreach (WorldPawnLinkRecord r in linkRecords)
@@ -155,10 +239,15 @@ namespace RegionsAndSocieties.PersistentWorld.Integration
 
                 byte[] packed = null;
                 try { if (!string.IsNullOrEmpty(overlayBlob)) packed = Convert.FromBase64String(overlayBlob); }
-                catch (FormatException) { Log.Warning("[R&S PersistentWorld] The saved overlay was unreadable; starting from the birth baseline."); }
-                overlay.Load(packed);
+                catch (FormatException) { Log.Warning("[R&S PersistentWorld] The saved overlay copy was unreadable; relying on the database."); }
+                overlay.Load(packed);   // the recovery copy; the database replaces it in FinalizeInit when it has the commit
                 overlayBlob = null;
             }
+        }
+
+        private string ParentOf(string commitId)
+        {
+            return db?.Run("lineage parent", c => new LineageStore(c).Info(commitId)?.parentId, null);
         }
     }
 }
